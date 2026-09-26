@@ -81,3 +81,10 @@ def _isolated_data_dir(tmp_path, monkeypatch):
     from orb_lab.data_sources import databento_source
 
     monkeypatch.setattr(databento_source, "DATA_DIR", tmp_path / "data")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_yahoo_dir(tmp_path, monkeypatch):
+    from orb_lab.data_sources import yahoo
+
+    monkeypatch.setattr(yahoo, "DATA_DIR", tmp_path / "data")

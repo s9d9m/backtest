@@ -282,6 +282,24 @@ def cmd_lockbox_status(args):
     print(json.dumps(load_ledger(), indent=2))
 
 
+def cmd_free_test(args):
+    from .data_sources.yahoo import PHASE0_LABEL
+    from .phase0.pipeline import RESULTS_DIR, run_free_test
+    from .phase0.report import write_combined
+
+    print(PHASE0_LABEL)
+    summaries = {}
+    for sym in args.symbol.split(","):
+        s = run_free_test(sym, n_workers=args.workers, refresh=args.refresh, interval=args.interval)
+        summaries[sym] = s
+        t = s["headline"]["test"]
+        print(f"{sym}: interval {s['interval']} | split {s['split']['sessions']} | selected {s['frozen']['selected']['config_key']} | "
+              f"FINAL TEST {t['trades']} trades, {t['exp_r']:+.3f} R, net ${t['net_pnl']:,.2f} | verdict {s['verdict']['category']}")
+        print(f"   report: {RESULTS_DIR / sym / 'phase0_report.md'}")
+    if len(summaries) > 1:
+        print("comparison:", write_combined(summaries, RESULTS_DIR))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="orb_lab")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -354,6 +372,12 @@ def main(argv=None):
     p.add_argument("--evidence", default="")
     p.add_argument("--test-data", default="")
     p.set_defaults(func=cmd_hypothesis)
+    p = sub.add_parser("free-test", help="PHASE0_FREE_PROXY: free Yahoo ETF proxy experiment (NOT futures validation)")
+    p.add_argument("--symbol", default="SPY", help="e.g. SPY, QQQ or SPY,QQQ")
+    p.add_argument("--interval", default="auto", choices=["auto", "1m", "2m", "5m", "15m"])
+    p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2)))
+    p.add_argument("--refresh", action="store_true", help="re-download instead of using the cache")
+    p.set_defaults(func=cmd_free_test)
     p = sub.add_parser("lockbox-status")
     p.set_defaults(func=cmd_lockbox_status)
     args = parser.parse_args(argv)

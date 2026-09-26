@@ -255,3 +255,42 @@ def build_cube(
     sessions_per_month = np.bincount(day_month, minlength=n_months)
     return StatsCube(path=path, months=months, sessions_per_month=sessions_per_month, configs=configs,
                      data=np.lib.format.open_memmap(data_file, mode="r"), key=key)
+
+
+def grouped_stats(
+    prep: PreparedData,
+    configs: list[StrategyParams],
+    execution: ExecutionParams,
+    groups: np.ndarray,
+    labels: list[str],
+    *,
+    n_workers: int = 1,
+    chunk_size: int = 500,
+) -> StatsCube:
+    """In-memory cube aggregated by an arbitrary session grouping (e.g. train / validation).
+
+    ``groups[d]`` is the group index of session *d* of ``prep``; every session of ``prep`` must belong
+    to a group. Pass a ``prep`` that only contains the sessions you are allowed to evaluate.
+    """
+    groups = np.asarray(groups, dtype=np.int64)
+    if len(groups) != prep.n_days or groups.min() < 0 or groups.max() >= len(labels):
+        raise ValueError("groups must assign every session of prep to one of the labels")
+    n = len(labels)
+    total = len(configs)
+    data = np.zeros((total, n, len(STATS)), dtype=np.float64)
+    state = dict(prep=prep, configs=configs, execution=execution, day_month=groups, n_months=n)
+    bounds = [(k, k * chunk_size, min((k + 1) * chunk_size, total)) for k in range((total + chunk_size - 1) // chunk_size)]
+    if n_workers <= 1 or len(bounds) <= 1:
+        _init(state)
+        for k, lo, hi in bounds:
+            _, lo, hi, block = _chunk(k, lo, hi)
+            data[lo:hi] = block
+    else:
+        config_stats(prep, configs[0], execution, groups, n)  # compile first
+        method = "forkserver" if "forkserver" in mp.get_all_start_methods() else "spawn"
+        with ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context(method), initializer=_init, initargs=(state,)) as pool:
+            for fut in as_completed([pool.submit(_chunk, k, lo, hi) for k, lo, hi in bounds]):
+                _, lo, hi, block = fut.result()
+                data[lo:hi] = block
+    return StatsCube(path=Path("."), months=list(labels), sessions_per_month=np.bincount(groups, minlength=n), configs=configs,
+                     data=data, key="grouped")

@@ -9,3 +9,4 @@ runs/*
 data/*
 !data/README.md
 .streamlit/secrets.toml
+phase0_results/**/*.parquet

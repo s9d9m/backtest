@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0: PHASE0_FREE_PROXY (free Yahoo ETF proxy experiment; NOT futures validation)
+- `data_sources/yahoo.py`: free intraday provider (yfinance). It measures availability (per-chunk
+  refusal messages recorded), refines boundaries day by day, keeps a cached raw chunk store and a
+  processed canonical file with provenance (hashes, requested/returned periods, timezone).
+- `phase0/`: `free-test` pipeline:
+  - measured interval choice, DQ gate, chronological 60/20/20 split;
+  - selection on a copy of the data truncated before the final test, frozen with SHA-256 before the
+    test is evaluated;
+  - per-share friction on every fill ($0 reference, $0.01–$0.05);
+  - neighbourhood robustness, phase heatmaps, random-direction control, buy-and-hold baselines,
+    concentration analysis;
+  - complete trade logs; 10 winner + 10 loser verification charts (supplemented from dev-selected
+    configurations when the candidate has too few); 1-minute resolution cross-check.
+- `optimization/stats_cube.grouped_stats`: cube over arbitrary session groups.
+- `config/phase0.yaml`, kept separate from the futures configuration. CLI `free-test --symbol SPY,QQQ`.
+- Executed on real data: see `phase0_results/PHASE0_REPORT.md` (SPY and QQQ both MIXED; no
+  statistically meaningful evidence at 42 sessions).
+- 126 tests (+9: Yahoo timestamps across DST, refusal reporting, interval choice, ETF tick and costs,
+  5-minute OR/entry/exit, missing bars and misaligned opens, chronological split, final-test leakage
+  (mutation-checked), trade log and control consistency).
+
 ## 0.3.0: Real-data infrastructure and Milestone 3 (walk-forward)
 - `DATA_SOURCES.md`: evaluation of Databento, FirstRate, Kibot, Portara/CQG, broker feeds and free
   sources. Recommendation: Databento GLBX.MDP3 individual contracts. Exact acquisition steps.

@@ -1,0 +1,162 @@
+{
+  "family": "PHASE0_FREE_PROXY",
+  "label": "FREE PROXY EXPERIMENT \u2014 NOT FUTURES VALIDATION",
+  "symbol": "QQQ",
+  "interval": "5m",
+  "frozen_utc": "2026-09-26T07:33:14.254177+00:00",
+  "split": {
+    "train": [
+      "2026-07-29",
+      "2026-09-01"
+    ],
+    "validation": [
+      "2026-09-02",
+      "2026-09-14"
+    ],
+    "final_test": [
+      "2026-09-15",
+      "2026-09-25"
+    ],
+    "sessions": {
+      "train": 25,
+      "validation": 8,
+      "final_test": 9
+    }
+  },
+  "headline_friction_usd_per_share": 0.02,
+  "selection_rule": {
+    "n_finalists": 25,
+    "min_trades_train": 12,
+    "min_trades_val": 4,
+    "neighbour_weight": 0.5,
+    "validation_weight": 0.5,
+    "w_sharpe": 0.35,
+    "w_tstat": 0.35,
+    "w_pf": 0.3
+  },
+  "space": {
+    "raw": 344250,
+    "invalid": 11475,
+    "canonical_duplicates": 73950,
+    "equivalent_limit_or_pct50_removed": 22185,
+    "evaluated": 236640,
+    "invalid_examples": [
+      "{'orb_start': '09:30', 'range_minutes': 30, 'entry_tf': 5, 'entry_method': 'market', 'confirmation': 'close', 'stop': 'or_mid', 'target_r': 0.5, 'cutoff': '10:00', 'direction': 'both', 'max_trades': 1}: cutoff 10:00 must be after the opening range ends (09:30 + 30m)",
+      "{'orb_start': '09:30', 'range_minutes': 30, 'entry_tf': 5, 'entry_method': 'market', 'confirmation': 'close', 'stop': 'or_mid', 'target_r': 0.5, 'cutoff': '10:00', 'direction': 'long', 'max_trades': 1}: cutoff 10:00 must be after the opening range ends (09:30 + 30m)",
+      "{'orb_start': '09:30', 'range_minutes': 30, 'entry_tf': 5, 'entry_method': 'market', 'confirmation': 'close', 'stop': 'or_mid', 'target_r': 0.5, 'cutoff': '10:00', 'direction': 'short', 'max_trades': 1}: cutoff 10:00 must be after the opening range ends (09:30 + 30m)"
+    ]
+  },
+  "selected": {
+    "config_key": "66a6f5109b68",
+    "orb_start": "09:30",
+    "range_minutes": 5,
+    "entry_tf": 5,
+    "entry_method": "limit",
+    "confirm_ticks": 1.0,
+    "confirm_or_frac": 0.0,
+    "entry_buffer_ticks": 0,
+    "stop_method": "or_pct",
+    "stop_param": 0.75,
+    "atr_period": 0,
+    "target_r": 0.6,
+    "cutoff": "13:00",
+    "time_exit": null,
+    "direction": "both",
+    "max_trades": 1,
+    "reentry": "any",
+    "breakeven_r": 0.0,
+    "or_atr_min": 0.0,
+    "or_atr_max": 0.0,
+    "plateau_class_train": "mixed",
+    "train_metrics": {
+      "n_trades": 17.0,
+      "win_rate": 0.8235294117647058,
+      "exp_r": 0.2967743937873226,
+      "t_stat_r": 1.9394479546179033,
+      "sharpe": 7.144966490513332,
+      "profit_factor": 3.198170731707317,
+      "net_pnl": 10.814999999999998,
+      "gross_pnl": 11.495,
+      "exp_usd": 0.6361764705882351,
+      "n_long": 8.0,
+      "n_short": 9.0,
+      "exp_r_long": 0.17703485704074434,
+      "exp_r_short": 0.4032095375620589,
+      "pnl_long": 2.245,
+      "pnl_short": 8.569999999999997,
+      "ambiguous_share": 0.0
+    },
+    "val_metrics": {
+      "n_trades": 7.0,
+      "win_rate": 0.7142857142857143,
+      "exp_r": 0.11462880135492308,
+      "t_stat_r": 0.3866943865327721,
+      "sharpe": 3.243107622692518,
+      "profit_factor": 1.6260156249999793,
+      "net_pnl": 1.6025999999999474,
+      "gross_pnl": 1.8825999999999476,
+      "exp_usd": 0.22894285714284962,
+      "n_long": 5.0,
+      "n_short": 2.0,
+      "exp_r_long": 0.2518962596071682,
+      "exp_r_short": -0.2285398442756898,
+      "pnl_long": 1.4525999999999475,
+      "pnl_short": 0.1499999999999999,
+      "ambiguous_share": 0.0
+    }
+  },
+  "best_in_sample_train_score": {
+    "config_key": "07642b8bf78a",
+    "orb_start": "09:30",
+    "range_minutes": 10,
+    "entry_tf": 10,
+    "entry_method": "limit",
+    "confirm_ticks": 0.0,
+    "confirm_or_frac": 0.0,
+    "entry_buffer_ticks": 0,
+    "stop_method": "or_opposite",
+    "stop_param": 0.0,
+    "atr_period": 0,
+    "target_r": 0.6,
+    "cutoff": "13:00",
+    "time_exit": null,
+    "direction": "short",
+    "max_trades": 1,
+    "reentry": "any",
+    "breakeven_r": 0.0,
+    "or_atr_min": 0.0,
+    "or_atr_max": 0.0
+  },
+  "best_in_sample_train_plus_val_pnl": {
+    "config_key": "d4689dafa80a",
+    "orb_start": "09:30",
+    "range_minutes": 5,
+    "entry_tf": 5,
+    "entry_method": "market",
+    "confirm_ticks": 0.0,
+    "confirm_or_frac": 0.0,
+    "entry_buffer_ticks": 0,
+    "stop_method": "or_mid",
+    "stop_param": 0.0,
+    "atr_period": 0,
+    "target_r": 1.5,
+    "cutoff": "10:00",
+    "time_exit": null,
+    "direction": "both",
+    "max_trades": 1,
+    "reentry": "any",
+    "breakeven_r": 0.0,
+    "or_atr_min": 0.0,
+    "or_atr_max": 0.0
+  },
+  "selection_bias_train": {
+    "n_configs": 236640,
+    "n_effective": 236640.0,
+    "sharpe_cross_sectional_std": 3.07475726029054,
+    "best_sharpe": 9.688769776708364,
+    "expected_max_sharpe_under_null": 14.065973611598283,
+    "best_exceeds_null_max": false,
+    "share_positive_sharpe": 0.4143973968897904
+  },
+  "final_test_seen": false
+}

@@ -280,3 +280,51 @@ This is the intended behaviour: the in-sample "winners" of a no-edge market fail
 
 **Pending before any real result is quoted:** verify transaction costs against a real broker/CME fee
 schedule (research plan Task 5). The `instruments.yaml` numbers are still unverified placeholders.
+
+---
+
+## PHASE0_FREE_PROXY (v0.4.0): free Yahoo SPY/QQQ experiment, NOT futures validation
+
+**A-39. Measured Yahoo limits (2026-09-26).**
+- 1m: last 30 days (20 sessions).
+- 2m: the 60-day window is accepted, but data starts 2026-08-13 (31 sessions).
+- 5m and 15m: last 60 days (42 sessions).
+
+5m was used: the finest interval with the maximum history, and every requested OR length is a
+multiple of 5. Entry timeframes are therefore 5/10/15 (1- and 3-minute entries are impossible).
+
+**A-40. Yahoo prices.**
+- Unadjusted and RTH-only; bar-start stamps in America/New_York.
+- Float noise is removed by 4-dp rounding. Genuine sub-penny prints (~17 % of SPY OHLC values) are
+  kept, so tick-based levels are approximate to under half a cent.
+- 5m bars equal aggregated 1m bars exactly on all 1,560 overlapping bars.
+
+**A-41. ETF friction model.** $X/share is charged on every fill (entry and exit, market, stop and
+limit), via the engine's per-side cost field (1 contract = 1 share). Stop and target distances are
+unaffected. The engine's default path-slippage model moves brackets with the fill and only charges
+market and stop fills, so it never reduced the P&L of a trade that still reached its target. It was
+used in the first SPY run and replaced; this is disclosed in the reports. The same configuration was
+selected under both models.
+
+**A-42. Split and isolation.**
+- Chronological 60/20/20 by session.
+- Selection runs on `subset_before(test_start)`: the test bars are not in memory.
+- The frozen selection file (SHA-256 logged) is written before the full dataset is evaluated.
+- Test: replacing every final-test bar with a different market leaves the selection and all finalist
+  scores unchanged. A mutation that keeps the test in memory is caught.
+
+**A-43. Duplicates.** A limit entry fills exactly at the broken boundary (buffer 0, conservative fill),
+so its 50 %-of-width stop equals the midpoint stop. Those configurations are removed.
+
+**A-44. Random-direction control.** Same entry bar, entry price, risk distance and target multiple;
+direction by coin flip; 10,000 draws; the same exit rules and costs. It reproduces every engine trade's
+R exactly when given the actual direction.
+
+**A-45. Conclusion rule, stated in code before the test was run.**
+- NO PRELIMINARY EVIDENCE if final-test expectancy ≤ 0.
+- PROMISING only if validation > 0, the result survives $0.03/share, it beats the random-direction
+  control at p < 0.10, the final-test neighbourhood is a plateau, and t ≥ 2.
+- MIXED otherwise.
+
+**A-46. Descriptive medians exclude configurations with zero trades in that phase.** This was
+corrected after the first report. It never affected selection.

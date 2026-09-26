@@ -10,3 +10,5 @@ streamlit>=1.35
 pytest>=8
 tabulate>=0.9
 databento>=0.40
+matplotlib>=3.8
+yfinance>=0.2.50  # optional, PHASE0_FREE_PROXY only

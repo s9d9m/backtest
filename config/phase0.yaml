@@ -1,0 +1,50 @@
+# PHASE0_FREE_PROXY — FREE PROXY EXPERIMENT — NOT FUTURES VALIDATION
+# Kept separate from instruments.yaml / search_spaces.yaml so the futures research design is untouched.
+
+instruments:
+  SPY:
+    name: SPDR S&P 500 ETF (proxy for the equity-index futures leg; NOT ES)
+  QQQ:
+    name: Invesco QQQ Trust (proxy for the equity-index futures leg; NOT NQ)
+
+# common ETF specification (per share)
+etf_spec:
+  tick_size: 0.01          # minimum price increment for SPY/QQQ (> $1 NMS stocks/ETFs)
+  tick_value: 0.01         # $ per tick per share
+  multiplier: 1
+  commission_per_side: 0.0 # commission-free retail brokerage; friction is modelled as adverse execution
+  exchange_fee_per_side: 0.0
+  calendar: XNYS
+  session_open: "18:00"    # no ETF bars after 16:00, so this only keeps session assignment on the calendar date
+  session_close: "16:00"
+  session_exit: "15:55"    # flat at the open of the last 5-minute bar
+  early_close_exit_buffer_min: 5
+  analysis_window_start: "09:30"
+
+shares: 100                # fixed position for $ reporting; R-based metrics are size-independent
+
+# friction per share charged on EVERY fill (entry and exit, market, stop and limit alike), via the engine's
+# per-side cost field (1 contract = 1 share). Limit fills must additionally trade THROUGH the price by one tick.
+friction_grid_usd_per_share: [0.00, 0.01, 0.02, 0.03, 0.05]
+headline_friction_usd_per_share: 0.02   # selection and headline results; $0.00 is reference only
+
+split: {train: 0.6, validation: 0.2, test: 0.2}
+
+selection:
+  n_finalists: 25
+  min_trades_train: 12
+  min_trades_val: 4
+  neighbour_weight: 0.5
+  validation_weight: 0.5
+
+grid:
+  orb_start: ["09:30"]
+  range_minutes: [5, 10, 15, 20, 30]
+  entry_tf: [5, 10, 15]          # 1- and 3-minute entry bars are impossible on 5-minute data
+  entry_method: [market, limit, stop]
+  confirmation: [close, 1tick, 2tick, 5pct, 10pct]
+  stop: [or_mid, "or_pct:0.50", "or_pct:0.67", "or_pct:0.75", or_opposite]   # opposite boundary == "100%"
+  target_r: [0.50, 0.60, 0.70, 0.75, 0.80, 0.90, 1.00, 1.10, 1.20, 1.25, 1.30, 1.40, 1.50, 1.75, 2.00, 2.50, 3.00]
+  cutoff: ["10:00", "10:30", "11:00", "11:30", "12:00", "13:00"]
+  direction: [both, long, short]
+  max_trades: [1]

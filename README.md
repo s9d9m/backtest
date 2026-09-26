@@ -19,6 +19,18 @@ out-of-sample walk-forward curve (Milestone 3).
 | 5 | Monte Carlo, Deflated Sharpe, PBO/CSCV | planned |
 | 6 | Retest, FVG, candle-confirmation entries; trailing stops; regime/percentile filters | planned |
 
+## Phase 0: free proxy experiment (NOT futures validation)
+
+```bash
+pip install yfinance            # optional; free, no key, no account
+python -m orb_lab.cli free-test --symbol SPY,QQQ
+```
+
+It measures Yahoo's actual intraday limits, downloads and caches, runs the DQ gate, splits
+chronologically (60/20/20), selects without the final test in memory, freezes the selection, then runs
+the final test once. Outputs: reports, trade logs, heatmaps and trade charts in `phase0_results/`.
+Results from 2026-09-26: `phase0_results/PHASE0_REPORT.md`.
+
 ## Real-market research workflow
 
 No real data is included (licensing), and none has been analysed yet. See
@@ -37,7 +49,7 @@ python -m orb_lab.cli hypothesis list
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                                  # 116 tests
+pytest                                  # 126 tests
 streamlit run app.py                    # dashboard
 
 # command line

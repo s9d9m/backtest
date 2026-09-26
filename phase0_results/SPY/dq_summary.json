@@ -1,0 +1,34 @@
+{
+  "verdict": "REVIEW",
+  "reasons": [
+    "warning [off_tick_prices]: 52.8% of bars have prices off the 0.01 tick grid (ratio back-adjusted continuous contract?). Tick-based order levels become approximate. (n=1730)"
+  ],
+  "sessions": 42,
+  "first_session": "2026-07-29",
+  "last_session": "2026-09-25",
+  "rows": 3276,
+  "utc_offsets_seen": [
+    "-1 days +20:00:00"
+  ],
+  "dst_transition_in_sample": false,
+  "sessions_first_bar_not_0930": 0,
+  "sessions_incomplete": 0,
+  "sessions_with_extra_bars": 0,
+  "missing_calendar_sessions": [],
+  "early_close_sessions": [],
+  "duplicate_or_invalid": [
+    "[warning] off_tick_prices n=1730"
+  ],
+  "modal_peak_volume_minute_et": 570,
+  "one_minute_cross_check": {
+    "bars_compared": 1560,
+    "max_abs_diff": {
+      "open": 0.0,
+      "high": 0.0,
+      "low": 0.0,
+      "close": 0.0
+    },
+    "share_ohlc_identical_within_half_cent": 1.0,
+    "volume_ratio_median": 1.0
+  }
+}
