@@ -1,0 +1,58 @@
+# Reference strategy (the "default" 09:30 ET basic breakout). This is a starting point for research,
+# not a recommended configuration.
+strategy:
+  orb_start: "09:30"
+  range_minutes: 15
+  entry_tf: 5
+  entry_method: market        # market | limit | stop
+  confirm_ticks: 0            # close must be > boundary + confirm_ticks ...
+  confirm_or_frac: 0.0        # ... + confirm_or_frac * OR width
+  entry_buffer_ticks: 0       # limit/stop order level offset beyond the boundary
+  stop_method: or_opposite    # or_opposite | or_mid | or_pct | atr | fixed_ticks
+  stop_param: 0.0             # pct of OR width / ATR multiple / ticks, depending on stop_method
+  atr_period: 14
+  target_r: 1.0               # 0 = no fixed target
+  cutoff: "11:00"
+  time_exit: null             # null = instrument session_exit (end-of-session exit)
+  direction: both             # both | long | short
+  max_trades: 1               # 0 = unlimited until cutoff (hard cap 32/day)
+  reentry: any                # any | opposite_after_loss | same_after_loss | either_after_loss
+  breakeven_r: 0.0            # 0 = off
+  or_atr_min: 0.0             # normalized OR (width / ATR) filter, [min, max); 0 = off
+  or_atr_max: 0.0
+
+execution:
+  slippage_ticks: null        # null = instrument default
+  commission_per_side: null
+  exchange_fee_per_side: null
+  fill_model: conservative    # standard | conservative  (limit entries and limit targets)
+  ambiguity: conservative     # optimistic | pessimistic | conservative (same-bar stop/target ordering)
+  max_fill_delay_minutes: 5
+  frictionless: false
+
+sizing:
+  mode: fixed_contracts       # fixed_contracts | fixed_risk | pct_equity
+  contracts: 1
+  risk_dollars: 1000
+  risk_pct: 0.01
+  starting_equity: 100000
+  max_contracts: 1000
+
+data:
+  min_or_coverage: 0.8        # fraction of expected base bars that must exist inside the OR window
+  exclude_early_close: false
+
+# Composite in-sample quality score used to rank grid-search results (Milestone 2).
+# It is an in-sample statistic and is NOT evidence of an out-of-sample edge.
+objective:
+  weights:
+    sharpe: 0.30
+    t_stat_r: 0.25
+    log_profit_factor: 0.15
+    calmar: 0.10
+    pct_years_profitable: 0.20
+  penalties:
+    min_trades: 100
+    max_top5_share: 0.50
+    max_year_share: 0.50
+    max_drawdown: 0.30

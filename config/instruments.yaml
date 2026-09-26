@@ -1,0 +1,48 @@
+# Instrument definitions. Costs are per contract, per side, in USD.
+# Cost numbers are illustrative retail-level assumptions (see RESEARCH_NOTES.md, A-17);
+# replace them with your broker's actual schedule before drawing conclusions.
+defaults:
+  timezone: America/New_York
+  calendar: XNYS                # trading-day eligibility, holidays and early closes (U.S. cash-equity calendar)
+  session_open: "18:00"         # CME Globex session opens the previous evening (ET); bars >= this belong to the next session
+  session_close: "17:00"        # Globex session close (ET)
+  session_exit: "15:55"         # forced flat time (ET) for the RTH-anchored ORB research ("end-of-session exit")
+  early_close_exit_buffer_min: 5  # on early-close days, flat this many minutes before the calendar close
+  analysis_window_start: "08:00"  # earliest ET bar kept in the intraday simulation arrays
+  min_qty: 1
+  qty_step: 1
+  currency: USD
+
+instruments:
+  ES:
+    name: E-mini S&P 500
+    tick_size: 0.25
+    tick_value: 12.50
+    multiplier: 50
+    commission_per_side: 0.85
+    exchange_fee_per_side: 1.40
+    slippage_ticks: 1.0
+  NQ:
+    name: E-mini Nasdaq-100
+    tick_size: 0.25
+    tick_value: 5.00
+    multiplier: 20
+    commission_per_side: 0.85
+    exchange_fee_per_side: 1.40
+    slippage_ticks: 1.0
+  GC:
+    name: COMEX Gold
+    tick_size: 0.10
+    tick_value: 10.00
+    multiplier: 100
+    commission_per_side: 0.85
+    exchange_fee_per_side: 1.55
+    slippage_ticks: 1.0
+  6E:
+    name: Euro FX
+    tick_size: 0.00005
+    tick_value: 6.25
+    multiplier: 125000
+    commission_per_side: 0.85
+    exchange_fee_per_side: 1.60
+    slippage_ticks: 1.0

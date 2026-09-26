@@ -1,0 +1,64 @@
+# Parameter spaces for grid search. Keys are StrategyParams fields, plus two compound keys:
+#   stop:         "or_opposite" | "or_mid" | "or_pct:<frac>" | "atr:<mult>" | "fixed_ticks:<n>"
+#   confirmation: "close" | "1tick" | "2tick" | "5pct" | "10pct"
+# Irrelevant parameters are canonicalised and duplicates removed before running.
+
+smoke:
+  description: Tiny space for testing the pipeline end-to-end.
+  grid:
+    range_minutes: [10, 15]
+    entry_tf: [5]
+    stop: [or_opposite, or_mid]
+    target_r: [1.0, 1.5]
+    cutoff: ["11:00"]
+
+primary_930:
+  description: >
+    Spec section 33. First major experiment: high-resolution search around the 09:30 ET basic breakout.
+    Close-confirmed breakout, market entry at next bar open.
+  grid:
+    orb_start: ["09:30"]
+    range_minutes: [10, 15, 20, 30]
+    entry_tf: [3, 5, 10, 15]
+    entry_method: [market]
+    stop: [or_mid, or_opposite, "or_pct:0.50", "or_pct:0.67", "or_pct:0.75", "or_pct:1.00"]
+    target_r: [0.60, 0.70, 0.75, 0.80, 0.90, 1.00, 1.10, 1.20, 1.25, 1.30, 1.40, 1.50, 1.75]
+    cutoff: ["10:00", "10:30", "11:00", "11:30", "12:00", "13:00"]
+    direction: [both, long, short]
+    confirmation: [close, 1tick, 2tick, 5pct, 10pct]
+
+primary_930_reduced:
+  description: Coarser version of primary_930 for interactive use.
+  grid:
+    orb_start: ["09:30"]
+    range_minutes: [10, 15, 20, 30]
+    entry_tf: [5, 10, 15]
+    entry_method: [market]
+    stop: [or_mid, or_opposite, "or_pct:0.50"]
+    target_r: [0.75, 1.00, 1.25, 1.50, 2.00]
+    cutoff: ["10:30", "11:00", "12:00"]
+    direction: [both]
+    confirmation: [close]
+
+entry_order_types:
+  description: Spec 6A - compare order types for the basic breakout.
+  grid:
+    range_minutes: [10, 15, 20]
+    entry_tf: [5, 10]
+    entry_method: [market, limit, stop]
+    entry_buffer_ticks: [0, 1, 2, 3, 4]
+    stop: [or_opposite, or_mid]
+    target_r: [0.75, 1.0, 1.25, 1.5]
+    cutoff: ["11:00", "12:00"]
+
+start_time_experiment:
+  description: >
+    Spec section 34. Hold the architecture approximately constant and vary the ORB start time.
+    Must be judged with walk-forward results (Milestone 3), not full-sample ranking.
+  grid:
+    orb_start: ["09:00", "09:15", "09:30", "09:45", "10:00"]
+    range_minutes: [10, 15, 20]
+    entry_tf: [5, 10]
+    stop: [or_mid, or_opposite]
+    target_r: [0.75, 1.0, 1.25, 1.5]
+    cutoff: ["11:00", "11:30", "12:00", "13:00"]
