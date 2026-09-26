@@ -85,7 +85,11 @@ class PreparedData:
             return np.full(self.n_days, np.nan)
         if period not in self._atr_cache:
             self._atr_cache[period] = wilder_atr_known_before(
-                self.daily["high"].to_numpy(), self.daily["low"].to_numpy(), self.daily["close"].to_numpy(), int(period)
+                self.daily["high"].to_numpy(),
+                self.daily["low"].to_numpy(),
+                self.daily["close"].to_numpy(),
+                int(period),
+                prev_close=self.daily["prev_close"].to_numpy(),
             )
         return self._atr_cache[period]
 
@@ -186,6 +190,15 @@ def prepare_data(
     # the prior-day columns must be recomputed after dropping sessions
     daily["prev_close"] = daily["close"].shift(1)
     daily["prev_range"] = (daily["high"] - daily["low"]).shift(1)
+    if "contract" in window.columns and len(daily):
+        # never compare prices of different contracts: the previous close is unknown on roll sessions
+        session_contract = work.groupby("session_date")["contract"].first()
+        session_contract.index = pd.DatetimeIndex(session_contract.index)
+        daily["contract"] = session_contract.reindex(daily.index).to_numpy()
+        rolled_in = daily["contract"].ne(daily["contract"].shift(1))
+        rolled_in.iloc[0] = False
+        daily.loc[rolled_in, "prev_close"] = np.nan
+        daily["roll_session"] = rolled_in
 
     dates = eligible.to_numpy().astype("datetime64[D]")
     wdates = window["session_date"].to_numpy().astype("datetime64[D]")

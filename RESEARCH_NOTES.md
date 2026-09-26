@@ -194,3 +194,89 @@ On the null model no variant shows a significant edge (|t| < 2), and costs alway
 The planted edge is detected by every entry type. The 5-year null backtest of the reference strategy
 (`data/synth_ES_null.parquet`, seed 7) lost $27k net against roughly zero gross (t = −0.26). The loss
 is entirely transaction costs. That is exactly what an honest engine should show.
+
+---
+
+## Real-market phase (v0.3.0): governance and walk-forward
+
+**Status: no real market data has been analysed yet.** Nothing above or below is evidence about ORB
+profitability. See `DATA_SOURCES.md` for the source decision and acquisition steps.
+
+**A-29. Data source: Databento GLBX.MDP3 `ohlcv-1m`, individual contracts.** The front month is built
+causally: the contract with the highest volume in the *previous* session, forward-only rolls, and the
+first session dropped. Raw prices, **no back-adjustment**. Each session contains exactly one contract.
+Spreads are removed with an outright-only symbol filter.
+
+**A-30. Daily true range never spans a roll.** On the first session of a new contract the previous
+close is set to NaN, so TR = H − L. Roll gaps therefore cannot inflate ATR stops or the OR/ATR filter.
+
+**A-31. Real-data DQ adds month-by-month 09:30 alignment.** A timezone or DST error confined to part
+of the history shows up as a ~60-minute displacement of the volume peak, or as the 09:30 volume
+step-up moving to 08:30 or 10:30. Any such month gives the verdict **STOP** and research on that
+instrument halts until it is explained. The DQ report also checks every DST transition week, whether
+early-close sessions really stop trading, and year-by-year completeness. (Test: a synthetic one-hour
+error in summer 2021 is flagged in exactly those months.)
+
+**A-32. Research gates.** Optimisation on real data (`cli wfo`) refuses to run unless a DQ report
+exists for the exact file hash with verdict PASS or REVIEW. The dataset is always the
+lockbox-truncated development view. Every CLI path and the dashboard withhold a sealed lockbox, so no
+strategy result for lockbox sessions can be produced during development.
+
+**A-33. Lockbox.** The most recent 12 months, fixed when the DQ stage first runs (immutable; newer
+data does not move it). It is used only if ≥ 5 years of development data remain. Unlocking requires
+a frozen candidate file whose SHA-256 is recorded. The lockbox test can run exactly once; later calls
+return the stored result.
+
+**A-34. Registry.** `research/registry.jsonl` is append-only. Six hypotheses from the prior ORB
+research, and the full WFO design (structures, selection rule, search-space fingerprint
+`3d2f58d3a329379d` with 488,070 configurations, primary OOS variant), were registered on 2026-09-26
+**before any real data was loaded**. Anything found later from OOS analysis is registered as
+EXPLORATORY and cannot be called confirmed without new untouched data (the lockbox).
+
+**A-35. Walk-forward mechanics.**
+- *Monthly statistics cube.* Every configuration is simulated once over the development history, and
+  additive monthly statistics are stored: trades, wins, ΣP&L, Σdaily-P&L², ΣR, ΣR², gross win/loss,
+  long-side stats, gross P&L, ambiguous exits. Any window is an exact sum of months. This is valid
+  because strategies are intraday, hold no state across sessions, and are evaluated with 1 fixed
+  contract. A test checks that cube metrics equal trade-by-trade backtests.
+- *Windows.* Calendar months, with partial first and last months dropped. The primary structure is
+  12 / 3 / 3, rolled 3 months. Sensitivity structures: 24/3/3, 24/6/6, 36/6/6 (and 48/12/12). Roll
+  equals the OOS length, so OOS segments tile without overlap.
+- *Selection.* Per window, as defined in `optimization/walk_forward.py`:
+  1. Training score = 0.35·Sharpe/3 + 0.35·t/5 + 0.30·log PF, each clipped. Positive scores are shrunk
+     by trades / min_trades (min_trades = 40 for training).
+  2. Robust training score = ½ own score + ½ median score of the immediate parameter neighbours. With
+     no neighbours the second half is 0.
+  3. The top 25 by robust training score become finalists.
+  4. Validation score is computed with the same formula (min 10 trades).
+  5. Selection score = ½ validation + ½ robust training. The winner is frozen.
+- *OOS variants.* Primary is **always_trade**. Secondary is **stand_aside**: flat when the selected
+  configuration's validation expectancy ≤ 0. Both use only pre-OOS information.
+- *Structural isolation.* Selection receives a `CubeView` limited to `[train_start, val_end)` and
+  raises on any other month. Two tests prove that scrambling OOS and later data leaves every earlier
+  selection and every finalist score unchanged. A deliberately injected leak (validation extended into
+  OOS) is caught by both.
+- *Headline OOS result.* Stitched blind-OOS trades, 1 contract, net of costs. A 1 %-risk equity curve
+  is also produced. Slippage sensitivity (0.5 / 1 / 1.5 / 2 / 3 ticks) re-runs the **same frozen
+  selections**. A result is flagged **execution-sensitive** if OOS expectancy turns non-positive within
+  +2 ticks of the base assumption.
+- *Overfit flags.* Raised when:
+  - selected configurations are profitable in training but not OOS (median);
+  - the best raw training configuration collapses OOS;
+  - fewer than half of the OOS windows are profitable;
+  - the selection changes in more than 75 % of windows.
+
+**A-36. Phase heatmaps are descriptive.** Training = mean over windows. Validation and OOS = pooled
+over all validation or OOS months with each configuration held fixed. They show where plateaus lie;
+they are **not** walk-forward results and are never used to choose parameters.
+
+**A-37. Start-time experiment uses cutoffs relative to the ORB start** (+60, +120, +210 minutes) so
+different start times get comparable entry windows.
+
+**A-38. Machinery check on the synthetic null file** (not evidence about ORB): primary 12/3/3
+walk-forward over 540 configurations. Stitched OOS −0.055 R/trade (t = −1.35); only 40 % of windows
+profitable; median training expectancy +0.058 R versus OOS −0.096 R. All four overfit flags fired.
+This is the intended behaviour: the in-sample "winners" of a no-edge market fail out of sample.
+
+**Pending before any real result is quoted:** verify transaction costs against a real broker/CME fee
+schedule (research plan Task 5). The `instruments.yaml` numbers are still unverified placeholders.

@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from ..engine.params import ParamError, StrategyParams
+from ..engine.sessions import hhmm_to_minutes, minutes_to_hhmm
 
 CONFIRMATION_PRESETS: dict[str, tuple[float, float]] = {
     "close": (0.0, 0.0),
@@ -100,6 +101,10 @@ class ParameterSpace:
             values = dict(base)
             for key, value in zip(keys, combo):
                 values.update(_expand_value(key, value))
+            if "cutoff_offset_minutes" in values:
+                # cutoff relative to the ORB start, so different start times get comparable entry windows
+                offset = int(values.pop("cutoff_offset_minutes"))
+                values["cutoff"] = minutes_to_hhmm(hhmm_to_minutes(values["orb_start"]) + offset)
             try:
                 params = StrategyParams.from_dict(values)
                 params.validate(base_minutes)

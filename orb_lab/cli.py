@@ -49,7 +49,7 @@ def _dataset(args, instrument):
     policy = CleaningPolicy(duplicate_policy=args.duplicates, invalid_policy=args.invalid)
     cfg = load_strategy_config()
     try:
-        return build_dataset(
+        ds = build_dataset(
             args.data,
             instrument,
             source_tz=args.tz,
@@ -64,6 +64,18 @@ def _dataset(args, instrument):
         print("\nRefusing to backtest data with unresolved errors. Fix the data, choose an explicit cleaning "
               "policy (--duplicates/--invalid) or pass --allow-errors (recorded in the manifest).")
         sys.exit(2)
+    return _withhold_lockbox(ds, instrument)
+
+
+def _withhold_lockbox(ds, instrument):
+    """Strategy results are never produced for a sealed lockbox, whichever command is used."""
+    from .research.lockbox import apply_lockbox
+
+    prep, lock = apply_lockbox(instrument.symbol, ds.prep)
+    if lock and lock.get("lockbox_start"):
+        print(f"[lockbox] {instrument.symbol}: sessions from {lock['lockbox_start']} are withheld")
+        ds.prep = prep
+    return ds
 
 
 def _add_data_args(p):
@@ -180,6 +192,83 @@ def cmd_validate_synthetic(args):
     print(pd.DataFrame(rows).to_string(index=False))
 
 
+def cmd_fetch(args):
+    from .data_sources import databento_source as dbs
+
+    if args.estimate_only:
+        print(json.dumps(dbs.estimate_cost(args.instrument, args.start, args.end, args.mode), indent=2))
+        return
+    res = dbs.fetch(args.instrument, args.start, args.end, mode=args.mode)
+    print(json.dumps({k: res.provenance[k] for k in ("output_file", "output_rows", "rolls", "construction")}, indent=2, default=str))
+
+
+def cmd_dq_report(args):
+    from .research.gates import run_dq_stage
+
+    inst = get_instrument(args.instrument)
+    prov = None
+    prov_file = os.path.splitext(args.data)[0].replace("_front_1m", "_provenance") + ".json"
+    if os.path.exists(prov_file):
+        prov = json.load(open(prov_file))
+    ds, rdq, report, lock = run_dq_stage(args.data, inst, source_tz=args.tz, convention=args.convention,
+                                          lockbox_months=args.lockbox_months, provenance=prov)
+    print(f"verdict: {rdq.verdict}")
+    for r in rdq.reasons:
+        print("  -", r)
+    print(f"report: {report}")
+    print(f"lockbox: {lock}")
+    if rdq.verdict == "STOP":
+        print("Research on this instrument is STOPPED until the data problem is explained.")
+        sys.exit(3)
+
+
+def cmd_wfo(args):
+    from .engine.params import ExecutionParams as EP
+    from .optimization.walk_forward import SelectionConfig
+    from .optimization.wfo_runner import run_experiment
+    from .research.gates import research_dataset
+
+    inst = get_instrument(args.instrument)
+    cfg = load_strategy_config()
+    space = load_search_spaces(base=cfg["strategy"])[args.space]
+    if args.research:
+        ds, lock = research_dataset(args.data, inst, source_tz=args.tz, convention=args.convention)
+    else:
+        print("WARNING: non-research run (no DQ gate, no lockbox, not registered). Not evidence of anything.")
+        ds, lock = _dataset(args, inst), None
+    print(f"{inst.symbol}: development sessions {ds.prep.dates[0]} .. {ds.prep.dates[-1]}"
+          + (f" (lockbox from {lock['lockbox_start']} withheld)" if lock else ""))
+    execution = cfg["execution"] if args.slippage is None else EP(**{**cfg["execution"].to_dict(), "slippage_ticks": args.slippage})
+
+    def progress(stage, done, total, elapsed):
+        print(f"\r  {stage}: {done:,}/{total:,} {elapsed:,.0f}s", end="", flush=True)
+
+    run_dir, results = run_experiment(ds.prep, space, execution, structures=args.structures.split(","), families=args.families.split(","),
+                                      n_workers=args.workers, selection=SelectionConfig(), research=args.research,
+                                      data_description=ds.describe(), lockbox=lock, progress=progress)
+    print(f"\nrun dir: {run_dir}")
+    print(pd.read_csv(run_dir / "wfo_overview.csv").to_string(index=False, float_format=lambda v: f"{v:,.3f}"))
+
+
+def cmd_hypothesis(args):
+    from .research import registry
+
+    if args.action == "add":
+        e = registry.add_hypothesis(args.statement, status=args.status, source=args.source, data_seen=args.data_seen, test_plan=args.test_plan)
+        print(e["hypothesis_id"])
+    elif args.action == "update":
+        registry.update_hypothesis(args.id, args.status, args.evidence, args.test_data)
+    else:
+        for h in registry.hypotheses().values():
+            print(f"{h['hypothesis_id']} [{h['status']}] {h['statement']}  (introduced {h['ts_utc'][:19]}, source: {h['source']})")
+
+
+def cmd_lockbox_status(args):
+    from .research.lockbox import load_ledger
+
+    print(json.dumps(load_ledger(), indent=2))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="orb_lab")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -217,6 +306,42 @@ def main(argv=None):
     p.add_argument("--end", default="2022-12-30")
     p.add_argument("--seed", type=int, default=123)
     p.set_defaults(func=cmd_validate_synthetic)
+    p = sub.add_parser("fetch", help="download real 1-minute futures bars (Databento)")
+    p.add_argument("--instrument", required=True)
+    p.add_argument("--start", required=True)
+    p.add_argument("--end", required=True)
+    p.add_argument("--mode", default="parent", choices=["parent", "continuous"])
+    p.add_argument("--estimate-only", action="store_true")
+    p.set_defaults(func=cmd_fetch)
+    p = sub.add_parser("dq-report", help="real-data quality report; seals the lockbox")
+    p.add_argument("--data", required=True)
+    p.add_argument("--instrument", required=True)
+    p.add_argument("--tz", default=None)
+    p.add_argument("--convention", default="start", choices=["start", "end"])
+    p.add_argument("--lockbox-months", type=int, default=12)
+    p.set_defaults(func=cmd_dq_report)
+    p = sub.add_parser("wfo", help="walk-forward optimisation")
+    _add_data_args(p)
+    p.add_argument("--space", default="real_930_primary")
+    p.add_argument("--structures", default="primary_12_3_3,sens_24_3_3,sens_24_6_6,sens_36_6_6")
+    p.add_argument("--families", default="all,market,limit,stop")
+    p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2)))
+    p.add_argument("--slippage", type=float, default=None)
+    p.add_argument("--no-research", dest="research", action="store_false", help="bypass DQ gate/lockbox (synthetic only)")
+    p.set_defaults(func=cmd_wfo)
+    p = sub.add_parser("hypothesis")
+    p.add_argument("action", choices=["add", "update", "list"])
+    p.add_argument("--statement", default="")
+    p.add_argument("--status", default="EXPLORATORY")
+    p.add_argument("--source", default="")
+    p.add_argument("--data-seen", default="")
+    p.add_argument("--test-plan", default="")
+    p.add_argument("--id", default="")
+    p.add_argument("--evidence", default="")
+    p.add_argument("--test-data", default="")
+    p.set_defaults(func=cmd_hypothesis)
+    p = sub.add_parser("lockbox-status")
+    p.set_defaults(func=cmd_lockbox_status)
     args = parser.parse_args(argv)
     args.func(args)
 

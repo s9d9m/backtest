@@ -62,3 +62,36 @@ start_time_experiment:
     stop: [or_mid, or_opposite]
     target_r: [0.75, 1.0, 1.25, 1.5]
     cutoff: ["11:00", "11:30", "12:00", "13:00"]
+
+real_930_primary:
+  description: >
+    First real-market experiment (research plan Task 4). Basic breakout only, 09:30 ET, 1 trade/day.
+    Market after confirmed close, limit at the broken boundary after confirmation, and intrabar stop
+    breakout. Order buffer fixed at 0 ticks for this experiment. Walk-forward evaluated; results of
+    this grid are never read directly as evidence.
+  grid:
+    orb_start: ["09:30"]
+    range_minutes: [5, 10, 15, 20, 30]
+    entry_tf: [1, 3, 5, 10, 15]
+    entry_method: [market, limit, stop]
+    confirmation: [close, 1tick, 2tick, 5pct, 10pct]
+    stop: [or_mid, or_opposite, "or_pct:0.50", "or_pct:0.67", "or_pct:0.75", "or_pct:1.00"]
+    target_r: [0.50, 0.60, 0.70, 0.75, 0.80, 0.90, 1.00, 1.10, 1.20, 1.25, 1.30, 1.40, 1.50, 1.75, 2.00, 2.50, 3.00]
+    cutoff: ["10:00", "10:30", "11:00", "11:30", "12:00", "13:00"]
+    direction: [both, long, short]
+    max_trades: [1]
+
+real_start_time:
+  description: >
+    Research plan Task 10 (run only after the 09:30 experiment is complete). Same basic-breakout
+    family, reduced resolution, start time varied. Walk-forward only.
+  grid:
+    orb_start: ["09:00", "09:15", "09:30", "09:45", "10:00"]
+    range_minutes: [5, 10, 15, 30]
+    entry_tf: [1, 5, 15]
+    entry_method: [market, stop]
+    confirmation: [close, 5pct]
+    stop: [or_mid, or_opposite, "or_pct:0.67"]
+    target_r: [0.75, 1.00, 1.25, 1.50, 2.00]
+    cutoff_offset_minutes: [60, 120, 210]
+    direction: [both, long, short]

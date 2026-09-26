@@ -8,3 +8,5 @@ exchange_calendars>=4.5
 plotly>=5.20
 streamlit>=1.35
 pytest>=8
+tabulate>=0.9
+databento>=0.40

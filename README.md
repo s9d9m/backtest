@@ -14,17 +14,30 @@ out-of-sample walk-forward curve (Milestone 3).
 |---|---|---|
 | 1 | Loader, sessions/DST, basic 09:30 ORB, entries, stops, R targets, cutoff, costs, trade log, metrics, UI, tests, synthetic validation | **done** |
 | 2 | Parameter grid search (parallel, checkpointed), heatmaps, objectives, multiple-testing warning | **done** |
-| 3 | Walk-forward optimisation (train / validation / OOS, stitched OOS curve) | planned |
+| 3 | Walk-forward optimisation (train / validation / OOS, stitched OOS curve), lockbox, research registry | **done** |
 | 4 | Robustness: neighbour/plateau analysis, parameter-stability scores | planned |
 | 5 | Monte Carlo, Deflated Sharpe, PBO/CSCV | planned |
 | 6 | Retest, FVG, candle-confirmation entries; trailing stops; regime/percentile filters | planned |
+
+## Real-market research workflow
+
+No real data is included (licensing), and none has been analysed yet. See
+[DATA_SOURCES.md](DATA_SOURCES.md).
+
+```bash
+python -m orb_lab.cli fetch --instrument 6E --start 2015-06-01 --end 2026-09-01 --estimate-only
+python -m orb_lab.cli fetch --instrument 6E --start 2015-06-01 --end 2026-09-01
+python -m orb_lab.cli dq-report --data data/6E_databento_front_1m.parquet --instrument 6E   # seals the lockbox
+python -m orb_lab.cli wfo --data data/6E_databento_front_1m.parquet --instrument 6E --space real_930_primary
+python -m orb_lab.cli hypothesis list
+```
 
 ## Quick start
 
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                                  # 90 tests
+pytest                                  # 116 tests
 streamlit run app.py                    # dashboard
 
 # command line
@@ -64,15 +77,27 @@ orb_lab/
     pipeline.py                load -> check -> prepare
   strategies/
     basic_breakout.py          numba simulation kernel (market / limit / stop entries)
+  data_sources/
+    databento_source.py        Databento GLBX.MDP3 ohlcv-1m download, cost estimate, provenance
+    futures_roll.py            outright filter + causal previous-session-volume front-month roll
+  research/
+    registry.py                append-only record of hypotheses, experiments, WFO design
+    lockbox.py                 12-month final lockbox: seal, withhold, one-shot unlock
+    gates.py                   DQ-before-optimisation and lockbox enforcement
   optimization/
     parameter_space.py         YAML spaces -> canonical, de-duplicated configurations
     grid_search.py             multiprocessing + checkpoint/resume
     objectives.py              composite and alternative ranking objectives
     heatmaps.py                parameter-pair tables
     multiple_testing.py        expected max Sharpe under the null, effective trials
+    stats_cube.py              monthly sufficient-statistics cube (every config simulated once)
+    walk_forward.py            windows, neighbourhood-robust selection, frozen OOS, stitching
+    robustness.py              parameter neighbourhoods, plateau vs spike
+    wfo_runner.py              all structures x entry families, saved + registered
   reports/
     plots.py                   Plotly figures
     experiment.py              manifests (IDs, hashes, versions, costs) and exact rerun
+    dq_report.py               real-data DQ: month-by-month 09:30 ET alignment, DST, early closes
   ui/app_main.py               dashboard tabs
   cli.py
 tests/                         unit, exact-outcome, DST, look-ahead, statistical, grid, UI

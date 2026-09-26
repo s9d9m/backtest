@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0: Real-data infrastructure and Milestone 3 (walk-forward)
+- `DATA_SOURCES.md`: evaluation of Databento, FirstRate, Kibot, Portara/CQG, broker feeds and free
+  sources. Recommendation: Databento GLBX.MDP3 individual contracts. Exact acquisition steps.
+- `data_sources/databento_source.py`: cost estimate, resumable per-year raw cache, provenance JSON.
+  `data_sources/futures_roll.py`: outright filter, causal previous-session-volume forward-only roll,
+  roll report.
+- ATR/true range never spans a contract roll.
+- `reports/dq_report.py`: month-by-month 09:30 ET alignment, DST-transition checks, early-close
+  verification, year-by-year completeness, PASS/REVIEW/STOP verdict and a markdown report.
+- `research/`: append-only registry (hypotheses with statuses, experiments, WFO design), lockbox
+  (seal → development view → one-shot unlock with a frozen candidate), research gates (DQ before
+  optimisation, lockbox always withheld).
+- Milestone 3: monthly statistics cube, WFO structures (12/3/3 primary; 24/3/3, 24/6/6, 36/6/6
+  sensitivity), neighbourhood-robust selection, frozen blind OOS, stitched OOS equity (1 contract and
+  1 % risk), stand-aside variant, slippage sensitivity, execution-sensitivity and overfit flags,
+  per-window finalists, parameter stability, per-phase heatmap data, entry-family restriction.
+- Parameter spaces: `real_930_primary` (488,070 configurations) and `real_start_time` (relative
+  cutoffs).
+- CLI: `fetch`, `dq-report`, `wfo`, `hypothesis`, `lockbox-status`. Dashboard WALK-FORWARD tab.
+- Six hypotheses and the WFO design pre-registered before any real data.
+- 116 tests. New: roll construction, mocked Databento, DQ alignment, lockbox/registry/gates, WFO
+  segmentation, cube-vs-backtest equality, and two mutation-checked WFO leakage tests.
+
 ## 0.2.0 — Milestone 2: grid search and heatmaps
 - `optimization/parameter_space.py`: YAML parameter spaces (`config/search_spaces.yaml`), with
   compound `stop` and `confirmation` keys, validation, and canonicalisation that removes duplicates

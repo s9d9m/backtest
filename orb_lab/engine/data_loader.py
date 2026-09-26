@@ -282,7 +282,10 @@ def from_dataframe(
 ) -> LoadedData:
     """Wrap an in-memory frame (e.g. synthetic data) exactly like a file load."""
     notes: list[str] = []
-    source = frame.reset_index() if isinstance(frame.index, pd.DatetimeIndex) else frame
+    if isinstance(frame.index, pd.DatetimeIndex):
+        source = frame.rename_axis(frame.index.name or "timestamp").reset_index()
+    else:
+        source = frame
     if "ts" in source.columns and "timestamp" not in source.columns:
         source = source.rename(columns={"ts": "timestamp"})
     canonical, minutes = normalize_frame(

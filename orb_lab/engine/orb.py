@@ -49,17 +49,22 @@ def compute_opening_ranges(day_start, day_end, tod, high, low, start_min, length
     return or_hi, or_lo, coverage, ok
 
 
-def wilder_atr_known_before(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
+def wilder_atr_known_before(
+    high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int, prev_close: np.ndarray | None = None
+) -> np.ndarray:
     """Wilder ATR where element *d* only uses sessions ``< d`` (NaN until enough history).
 
     True range of session *k* is ``max(H-L, |H-C[k-1]|, |L-C[k-1]|)``; the first session uses ``H-L``.
     The Wilder average is seeded with the simple mean of the first ``period`` true ranges.
+    ``prev_close`` may be supplied explicitly; NaN entries (e.g. the first session after a contract roll,
+    whose previous close belongs to another contract) fall back to ``H-L``.
     """
     n = len(high)
     out = np.full(n, np.nan)
     if period < 1 or n == 0:
         return out
-    prev_close = np.concatenate(([np.nan], close[:-1]))
+    if prev_close is None:
+        prev_close = np.concatenate(([np.nan], close[:-1]))
     tr = np.maximum.reduce(
         [high - low, np.abs(high - np.nan_to_num(prev_close, nan=high)), np.abs(low - np.nan_to_num(prev_close, nan=low))]
     )

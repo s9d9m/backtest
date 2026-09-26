@@ -67,3 +67,9 @@ RANGE_BARS = {"09:30": (100.0, 101.0, 99.0, 100.0)}
 @pytest.fixture
 def instrument():
     return make_instrument()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_research_dir(tmp_path, monkeypatch):
+    """Tests must never touch the real research registry / lockbox ledger."""
+    monkeypatch.setenv("ORB_RESEARCH_DIR", str(tmp_path / "research"))

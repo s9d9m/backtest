@@ -101,6 +101,11 @@ def sidebar():
                     ds = build_dataset(src, inst, source_tz=tz, timestamp_convention=convention,
                                        policy=CleaningPolicy(dup, inv), allow_errors=allow, min_or_coverage=coverage,
                                        exclude_early_close=excl_early)
+                from ..research.lockbox import apply_lockbox
+
+                ds.prep, lock = apply_lockbox(inst.symbol, ds.prep)
+                if lock and lock.get("lockbox_start"):
+                    st.sidebar.info(f"Lockbox: sessions from {lock['lockbox_start']} are withheld")
                 _state()["dataset"] = ds
                 _state()["instrument"] = inst
                 for k in ("result", "grid"):
@@ -496,8 +501,9 @@ def main():
     with tabs[2]:
         tab_optimization()
     with tabs[3]:
-        tab_pending("Walk-forward optimization", 3, "It will optimise on training windows only, select on validation with a "
-                    "robustness objective, freeze parameters, and stitch only the unseen OOS segments.")
+        from .wfo_tab import tab_walk_forward
+
+        tab_walk_forward()
     with tabs[4]:
         tab_pending("Robustness analysis", 4, "It will test neighbouring parameters of every candidate and score parameter plateaus.")
     with tabs[5]:
