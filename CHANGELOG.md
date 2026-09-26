@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.1: Dashboard usable with free data
+- Dashboard:
+  - new default data source **Free Yahoo (SPY/QQQ)**. It uses the correct ETF spec (tick $0.01,
+    $0.02/share friction, 100 shares by default); previously SPY files could only be loaded under a
+    futures spec;
+  - it reuses the Phase-0 experiment's saved copy, or downloads the last ~60 days into
+    `data/dashboard_yahoo/` (the experiment's own file is never overwritten);
+  - SPY/QQQ added to the market list;
+  - "FREE PROXY — NOT FUTURES VALIDATION" banner whenever ETF data is loaded;
+  - range and entry-timeframe choices limited to multiples of the loaded bar size.
+- New **PHASE-0 RESULTS** tab (read-only, works on a fresh clone): conclusions, trade logs with CSV
+  download, trade-chart gallery, heatmaps, cost table, neighbourhood.
+- Easy launch: `.devcontainer/` (GitHub Codespaces opens the dashboard in the browser
+  automatically), double-click launchers `start_dashboard.bat` / `.command` / `.sh`, and
+  `START_HERE.md` for non-technical users. Streamlit usage statistics disabled.
+- Fixed: sidebar cost caption rendered as a LaTeX formula (unescaped `$`).
+- 127 tests (+1 headless dashboard test with the free-data source, offline).
+
 ## 0.4.0: PHASE0_FREE_PROXY (free Yahoo ETF proxy experiment; NOT futures validation)
 - `data_sources/yahoo.py`: free intraday provider (yfinance). It measures availability (per-chunk
   refusal messages recorded), refines boundaries day by day, keeps a cached raw chunk store and a

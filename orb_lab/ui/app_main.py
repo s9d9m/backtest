@@ -54,17 +54,61 @@ def _state():
 
 
 # ------------------------------------------------------------------------------------------ sidebar
+YAHOO = "Free Yahoo (SPY/QQQ)"
+
+
+def _etf_instruments() -> dict:
+    """SPY/QQQ ETF proxy specs (tick $0.01, per-share friction) from config/phase0.yaml."""
+    from ..phase0.pipeline import etf_instrument, load_config
+
+    cfg = load_config()
+    headline = float(cfg["headline_friction_usd_per_share"])
+    return {sym: etf_instrument(sym, cfg, headline) for sym in cfg["instruments"]}
+
+
+def _load_yahoo(symbol: str, refresh: bool) -> tuple[Path, str]:
+    """Free 5-minute Yahoo bars. Reuses the Phase-0 experiment's saved copy if present, otherwise downloads
+    the last ~60 days into data/dashboard_yahoo/ (the experiment's own file is never overwritten)."""
+    from ..data_sources import yahoo
+
+    experiment_copy = yahoo.DATA_DIR / "phase0" / f"{symbol}_5m.parquet"
+    if experiment_copy.exists() and not refresh:
+        return experiment_copy, f"Yahoo {symbol} 5m (saved copy used by the Phase-0 experiment)"
+    dash_dir = yahoo.DATA_DIR / "dashboard_yahoo"
+    path = dash_dir / "phase0" / f"{symbol}_5m.parquet"
+    if path.exists() and not refresh:
+        return path, f"Yahoo {symbol} 5m (saved dashboard download)"
+    today = pd.Timestamp.now(tz="America/New_York").normalize().tz_localize(None)
+    prov = yahoo.download(symbol, "5m", str((today - pd.Timedelta(days=58)).date()), str((today + pd.Timedelta(days=1)).date()),
+                          chunk_days=29, data_dir=dash_dir)
+    return path, f"Yahoo {symbol} 5m downloaded {prov['download_utc'][:16]} UTC ({prov['returned_first_bar'][:10]}..{prov['returned_last_bar'][:10]})"
+
+
 def sidebar():
     st.sidebar.title("ORB Lab")
     st.sidebar.caption(f"v{__version__} · research platform, not a signal service")
-    instruments = load_instruments()
-    symbol = st.sidebar.selectbox("Market", list(instruments), key="symbol")
-    inst = instruments[symbol]
-    st.sidebar.caption(f"{inst.name} · tick {inst.tick_size} = ${inst.tick_value} · default slippage {inst.slippage_ticks} tick(s)")
-    source = st.sidebar.radio("Data source", ["File path", "Upload", "Synthetic"], horizontal=True)
-    tz = st.sidebar.selectbox("Timezone of naive timestamps", ["(timestamps carry offset)", "America/New_York", "America/Chicago", "UTC"])
-    tz = None if tz.startswith("(") else tz
-    convention = st.sidebar.selectbox("Timestamp marks", ["start", "end"], format_func=lambda x: f"bar {x}")
+    source = st.sidebar.radio("Data source", [YAHOO, "File path", "Upload", "Synthetic"], horizontal=False)
+    etfs = _etf_instruments()
+    refresh = False
+    if source == YAHOO:
+        symbol = st.sidebar.selectbox("ETF (free proxy data, no account needed)", list(etfs), key="etf_symbol")
+        inst = etfs[symbol]
+        st.sidebar.caption("Last ~60 days of real 5-minute bars from Yahoo Finance. FREE PROXY — NOT FUTURES VALIDATION.")
+        refresh = st.sidebar.checkbox("Download fresh data from Yahoo (otherwise reuse the saved copy)", value=False)
+    else:
+        instruments = {**load_instruments(), **etfs}
+        symbol = st.sidebar.selectbox("Market", list(instruments), key="symbol",
+                                      format_func=lambda k: f"{k} (ETF proxy)" if k in etfs else k)
+        inst = instruments[symbol]
+    unit = "share" if symbol in etfs else "contract"
+    # "\\$" keeps Streamlit from reading text between two dollar signs as a LaTeX formula
+    st.sidebar.caption(f"{inst.name} · tick {inst.tick_size} = \\${inst.tick_value} per {unit} · cost "
+                       f"\\${inst.commission_per_side + inst.exchange_fee_per_side:g}/side + {inst.slippage_ticks:g} tick(s) slippage")
+    tz, convention = None, "start"
+    if source in ("File path", "Upload"):
+        tz = st.sidebar.selectbox("Timezone of naive timestamps", ["(timestamps carry offset)", "America/New_York", "America/Chicago", "UTC"])
+        tz = None if tz.startswith("(") else tz
+        convention = st.sidebar.selectbox("Timestamp marks", ["start", "end"], format_func=lambda x: f"bar {x}")
     with st.sidebar.expander("Cleaning policy"):
         dup = st.selectbox("Conflicting duplicates", ["error", "keep_first", "keep_last"])
         inv = st.selectbox("Invalid OHLC rows", ["error", "drop"])
@@ -72,7 +116,9 @@ def sidebar():
         coverage = st.slider("Min OR bar coverage", 0.5, 1.0, 0.8, 0.05)
         excl_early = st.checkbox("Exclude early-close sessions", value=False)
     src = None
-    if source == "File path":
+    if source == YAHOO:
+        pass
+    elif source == "File path":
         default = next(iter(sorted(Path("data").glob("*.parquet"))), None) if Path("data").exists() else None
         src = st.sidebar.text_input("Path (CSV/Parquet)", value=str(default) if default else "")
     elif source == "Upload":
@@ -90,7 +136,12 @@ def sidebar():
     if st.sidebar.button("Load data", type="primary"):
         with st.spinner("Loading and checking data..."):
             try:
-                if source == "Synthetic":
+                if source == YAHOO:
+                    path, label = _load_yahoo(symbol, refresh)
+                    ds = build_dataset(path, inst, policy=CleaningPolicy(dup, inv), allow_errors=allow, min_or_coverage=coverage,
+                                       exclude_early_close=excl_early)
+                    ds.loaded.source = label
+                elif source == "Synthetic":
                     frame = generate_bars(inst, s_start, s_end, seed=int(seed), trend_strength=trend)
                     ds = build_dataset(frame, inst, min_or_coverage=coverage, exclude_early_close=excl_early)
                     ds.loaded.source = f"synthetic(seed={int(seed)}, trend={trend}, {s_start}..{s_end})"
@@ -98,6 +149,9 @@ def sidebar():
                     if not src:
                         st.sidebar.error("Choose a file first")
                         return
+                    if symbol not in etfs and any(k in Path(src).name.upper() for k in etfs):
+                        st.sidebar.warning(f"The file name looks like ETF data but the market is {symbol}. Pick the ETF in 'Market' "
+                                           "so tick size and costs are right.")
                     ds = build_dataset(src, inst, source_tz=tz, timestamp_convention=convention,
                                        policy=CleaningPolicy(dup, inv), allow_errors=allow, min_or_coverage=coverage,
                                        exclude_early_close=excl_early)
@@ -163,14 +217,18 @@ def tab_data():
 
 
 # ------------------------------------------------------------------------------------------ BACKTEST
-def _param_form(defaults: StrategyParams, prefix: str = "bt") -> StrategyParams:
+def _param_form(defaults: StrategyParams, prefix: str = "bt", base_minutes: int = 1) -> StrategyParams:
+    ranges = [r for r in RANGES if r % base_minutes == 0]
+    entry_tfs = [t for t in ENTRY_TFS if t % base_minutes == 0]
     c = st.columns(4)
     orb_start = c[0].selectbox("ORB start (ET)", TIMES_ORB, index=TIMES_ORB.index(defaults.orb_start), key=f"{prefix}_start")
-    rng = c[1].selectbox("Range length (min)", RANGES, index=RANGES.index(defaults.range_minutes), key=f"{prefix}_range")
+    rng = c[1].selectbox("Range length (min)", ranges, index=ranges.index(defaults.range_minutes) if defaults.range_minutes in ranges else 0,
+                         key=f"{prefix}_range")
     entry_method = c[2].selectbox("Entry method", ENTRY_METHODS, index=ENTRY_METHODS.index(defaults.entry_method), key=f"{prefix}_em",
                                   help="market: close-confirmed, fill next bar open · limit: close-confirmed, limit at boundary · stop: intrabar stop order")
-    entry_tf = c[3].selectbox("Entry timeframe (min)", ENTRY_TFS, index=ENTRY_TFS.index(defaults.entry_tf), key=f"{prefix}_tf",
-                              disabled=entry_method == "stop")
+    entry_tf = c[3].selectbox("Entry timeframe (min)", entry_tfs, index=entry_tfs.index(defaults.entry_tf) if defaults.entry_tf in entry_tfs else 0,
+                              key=f"{prefix}_tf", disabled=entry_method == "stop",
+                              help=f"Only multiples of the loaded {base_minutes}-minute bars are possible")
     c = st.columns(4)
     conf = c[0].selectbox("Breakout confirmation", list(CONFIRMATION_PRESETS), key=f"{prefix}_conf")
     buffer = c[1].selectbox("Order buffer (ticks)", [0, 1, 2, 3, 4], key=f"{prefix}_buf", disabled=entry_method == "market")
@@ -226,13 +284,14 @@ def tab_backtest():
     cfg = load_strategy_config()
     with st.form("backtest_form"):
         st.subheader("Strategy")
-        params = _param_form(cfg["strategy"])
+        params = _param_form(cfg["strategy"], base_minutes=ds.prep.base_minutes)
         st.subheader("Execution & costs")
         execution = _execution_form(inst)
         st.subheader("Position sizing & period")
         c = st.columns(4)
         mode = c[0].selectbox("Sizing", SIZING_MODES)
-        contracts = c[1].number_input("Contracts (fixed)", 1, 1000, 1)
+        is_etf = inst.symbol in _etf_instruments()
+        contracts = c[1].number_input("Shares (fixed)" if is_etf else "Contracts (fixed)", 1, 100000, 100 if is_etf else 1)
         risk_pct = c[2].number_input("Risk % of equity", 0.1, 10.0, 1.0, 0.1) / 100
         equity = c[3].number_input("Starting equity ($)", 1000.0, 1e9, 100_000.0, 1000.0)
         start, end = _date_range(ds, "bt")
@@ -344,8 +403,8 @@ def tab_optimization():
         g = {}
         g["orb_start"] = ms("ORB start", "start", TIMES_ORB, grid.get("orb_start", ["09:30"]))
         with c[0]:
-            g["range_minutes"] = ms("Range length", "range", RANGES, grid.get("range_minutes", [10, 15, 20]))
-            g["entry_tf"] = ms("Entry TF", "tf", ENTRY_TFS, grid.get("entry_tf", [5, 10]))
+            g["range_minutes"] = ms("Range length", "range", [r for r in RANGES if r % ds.prep.base_minutes == 0], grid.get("range_minutes", [10, 15, 20]))
+            g["entry_tf"] = ms("Entry TF", "tf", [t for t in ENTRY_TFS if t % ds.prep.base_minutes == 0], grid.get("entry_tf", [5, 10]))
             g["entry_method"] = ms("Entry method", "em", list(ENTRY_METHODS), grid.get("entry_method", ["market"]))
             g["entry_buffer_ticks"] = ms("Order buffer (ticks)", "buf", [0, 1, 2, 3, 4], grid.get("entry_buffer_ticks", [0]))
         with c[1]:
@@ -493,7 +552,15 @@ def tab_report():
 def main():
     st.set_page_config(page_title="ORB Lab", layout="wide")
     sidebar()
-    tabs = st.tabs(["DATA", "BACKTEST", "OPTIMIZATION", "WALK-FORWARD", "ROBUSTNESS", "MONTE CARLO", "TRADE LOG", "REPORT"])
+    inst = _state().get("instrument")
+    if inst is not None and inst.symbol in _etf_instruments() and _state().get("dataset") is not None:
+        st.warning(f"**FREE PROXY EXPERIMENT — NOT FUTURES VALIDATION.** Loaded data: {inst.symbol} (ETF proxy, free Yahoo bars).")
+    tabs = st.tabs(["PHASE-0 RESULTS", "DATA", "BACKTEST", "OPTIMIZATION", "WALK-FORWARD", "ROBUSTNESS", "MONTE CARLO", "TRADE LOG", "REPORT"])
+    with tabs[0]:
+        from .phase0_tab import tab_phase0
+
+        tab_phase0()
+    tabs = tabs[1:]
     with tabs[0]:
         tab_data()
     with tabs[1]:

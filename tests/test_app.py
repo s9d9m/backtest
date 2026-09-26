@@ -1,5 +1,6 @@
 """Smoke test the Streamlit dashboard headlessly: load synthetic data, run a backtest and a small optimization."""
 
+import pandas as pd
 import pytest
 
 pytest.importorskip("streamlit")
@@ -54,3 +55,31 @@ def test_dashboard_end_to_end():
     _button(at, "RUN OPTIMIZATION").click().run()
     assert not at.exception, at.exception
     assert any("configurations tested" in (w.value or "") for w in list(at.warning) + list(at.success))
+
+
+def test_phase0_tab_and_free_yahoo_source_offline(tmp_path):
+    """The default view shows committed Phase-0 results; 'Free Yahoo' loads a saved copy with the ETF spec (no network)."""
+    from orb_lab.data_sources import yahoo
+
+    from .test_phase0 import FakeTicker, yahoo_frame
+
+    dates = [str(d.date()) for d in pd.bdate_range("2024-06-03", "2024-06-28") if str(d.date()) != "2024-06-19"]
+    yahoo.download("SPY", "5m", dates[0], "2024-06-29", chunk_days=40, ticker=FakeTicker(yahoo_frame(dates)))  # into the isolated DATA_DIR
+    at = AppTest.from_file(APP, default_timeout=600)
+    at.run()
+    assert not at.exception
+    labels = [m.label for m in at.metric]
+    assert "Unseen-test trades" in labels and "Conclusion" in labels
+    assert at.sidebar.radio[0].value == "Free Yahoo (SPY/QQQ)"
+    _button(at, "Load data").click().run()
+    assert not at.exception, at.exception
+    assert any("tradable sessions" in s.value for s in at.sidebar.success)
+    assert any("NOT FUTURES VALIDATION" in w.value for w in at.warning)
+    _button(at, "RUN BACKTEST").click().run()
+    assert not at.exception, at.exception
+    assert any(m.label == "Net P&L" for m in at.metric)
+    # ETF spec, not a futures spec: $0.02/share cost and 100 shares by default
+    assert any(ni.label == "Commission/side ($)" and abs(ni.value - 0.02) < 1e-9 for ni in at.number_input)
+    assert any(ni.label == "Shares (fixed)" and ni.value == 100 for ni in at.number_input)
+    tfs = next(sb for sb in at.selectbox if sb.label == "Entry timeframe (min)")
+    assert set(tfs.options) == {"5", "10", "15"}

@@ -1,5 +1,7 @@
 # ORB Lab
 
+**Just want to open the dashboard? See [START_HERE.md](START_HERE.md)** (browser-only via GitHub Codespaces, or double-click launchers; no credit card or API keys).
+
 A local research platform for testing whether **Opening Range Breakout** strategies on futures (ES,
 NQ, GC, 6E and anything you add) have a persistent, tradable edge after realistic costs and
 out-of-sample testing.
