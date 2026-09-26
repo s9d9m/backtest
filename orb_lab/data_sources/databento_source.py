@@ -29,8 +29,47 @@ DATASET_START = pd.Timestamp("2010-06-06")
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
+FREE_CREDIT_USD = 125.0
+
+
 class DatabentoUnavailable(RuntimeError):
     pass
+
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
+def _ledger_file() -> Path:
+    return DATA_DIR / "raw" / "databento" / "spend.json"
+
+
+def spend_ledger() -> dict:
+    f = _ledger_file()
+    return json.loads(f.read_text()) if f.exists() else {"spent_estimate_usd": 0.0, "downloads": []}
+
+
+def _record_spend(entry: dict) -> None:
+    ledger = spend_ledger()
+    ledger["spent_estimate_usd"] = round(ledger["spent_estimate_usd"] + entry["cost_usd"], 6)
+    ledger["downloads"].append(entry)
+    _ledger_file().parent.mkdir(parents=True, exist_ok=True)
+    _ledger_file().write_text(json.dumps(ledger, indent=2))
+
+
+def uncached_cost(root: str, start: str, end: str, mode: str = "parent", client=None, raw_dir: Path | None = None) -> dict:
+    """Quoted cost (USD) of the year-chunks not yet downloaded. Quotes are free; nothing is billed."""
+    client = client or get_client()
+    raw_dir = raw_dir or DATA_DIR / "raw" / "databento" / root
+    symbols, stype = request_symbols(root, mode)
+    chunks = {}
+    for a, b in year_chunks(start, end):
+        if (raw_dir / f"{mode}_{a:%Y%m%d}_{b:%Y%m%d}.parquet").exists():
+            continue
+        chunks[f"{a:%Y%m%d}_{b:%Y%m%d}"] = float(
+            client.metadata.get_cost(dataset=DATASET, symbols=symbols, schema=SCHEMA, stype_in=stype, start=a.isoformat(), end=b.isoformat())
+        )
+    return {"root": root, "chunks": chunks, "total_usd": sum(chunks.values())}
 
 
 def get_client(key: str | None = None):
@@ -110,9 +149,26 @@ def fetch(
     raw_dir: Path | None = None,
     out_dir: Path | None = None,
     session_open: str = "18:00",
+    budget_usd: float = FREE_CREDIT_USD,
 ) -> FetchResult:
-    """Download (or reuse cached) raw bars, build the front-month series and write outputs."""
+    """Download (or reuse cached) raw bars, build the front-month series and write outputs.
+
+    Before any paid request, the uncached chunks are quoted (free). If the quote plus the estimated
+    spend already recorded in ``spend.json`` would exceed ``budget_usd`` (default: the $125 free
+    credit), nothing is downloaded and :class:`BudgetExceeded` is raised.
+    """
     raw_dir = raw_dir or DATA_DIR / "raw" / "databento" / root
+    pending = [(a, b) for a, b in year_chunks(start, end) if not (raw_dir / f"{mode}_{a:%Y%m%d}_{b:%Y%m%d}.parquet").exists()]
+    quote = {"chunks": {}, "total_usd": 0.0}
+    if pending:
+        client = client or get_client()
+        quote = uncached_cost(root, start, end, mode, client=client, raw_dir=raw_dir)
+        spent = spend_ledger()["spent_estimate_usd"]
+        if spent + quote["total_usd"] > budget_usd + 1e-9:
+            raise BudgetExceeded(
+                f"{root}: downloading would cost ~${quote['total_usd']:.2f}; already spent ~${spent:.2f}; "
+                f"budget ${budget_usd:.2f}. Nothing was downloaded."
+            )
     out_dir = out_dir or DATA_DIR
     raw_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -129,6 +185,9 @@ def fetch(
             tmp = cache.with_suffix(".tmp")
             part.to_parquet(tmp)
             os.replace(tmp, cache)
+            _record_spend({"root": root, "mode": mode, "chunk": f"{a:%Y%m%d}_{b:%Y%m%d}",
+                           "cost_usd": quote["chunks"].get(f"{a:%Y%m%d}_{b:%Y%m%d}", 0.0),
+                           "utc": datetime.now(timezone.utc).isoformat()})
         frames.append(pd.read_parquet(cache))
         raw_files.append({"file": str(cache.relative_to(DATA_DIR.parent)) if cache.is_relative_to(DATA_DIR.parent) else str(cache),
                           "sha256": hashlib.sha256(cache.read_bytes()).hexdigest(), "rows": int(len(frames[-1]))})

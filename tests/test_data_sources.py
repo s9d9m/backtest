@@ -125,3 +125,20 @@ def test_missing_key_is_explained(monkeypatch):
     monkeypatch.delenv("DATABENTO_API_KEY", raising=False)
     with pytest.raises(dbs.DatabentoUnavailable, match="DATABENTO_API_KEY"):
         dbs.get_client()
+
+
+def test_budget_cap_blocks_paid_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(dbs, "DATA_DIR", tmp_path)
+    dates = list(pd.bdate_range("2023-12-26", "2024-01-05").strftime("%Y-%m-%d"))
+    bars = _contract_bars("ESH4", dates, 5000.0, [100] * len(dates)).rename(columns={"contract": "symbol"})
+    client = _MockClient(bars)  # quotes $1.25 per year-chunk
+    with pytest.raises(dbs.BudgetExceeded, match="Nothing was downloaded"):
+        dbs.fetch("ES", "2023-12-20", "2024-01-10", client=client, out_dir=tmp_path, budget_usd=2.0)
+    assert client.calls == []  # no paid request was made
+    dbs.fetch("ES", "2023-12-20", "2024-01-10", client=client, out_dir=tmp_path, budget_usd=2.5)
+    assert dbs.spend_ledger()["spent_estimate_usd"] == pytest.approx(2.5)
+    # cached chunks cost nothing: a re-run within a zero remaining budget still works
+    dbs.fetch("ES", "2023-12-20", "2024-01-10", client=_MockClient(bars.iloc[:0]), out_dir=tmp_path, budget_usd=2.5)
+    # any new download beyond the cap is refused
+    with pytest.raises(dbs.BudgetExceeded):
+        dbs.fetch("ES", "2024-01-10", "2024-02-01", client=client, out_dir=tmp_path, budget_usd=2.5)

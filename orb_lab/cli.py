@@ -196,9 +196,22 @@ def cmd_fetch(args):
     from .data_sources import databento_source as dbs
 
     if args.estimate_only:
-        print(json.dumps(dbs.estimate_cost(args.instrument, args.start, args.end, args.mode), indent=2))
+        rows, total = [], 0.0
+        for sym in args.instrument.split(","):
+            q = dbs.uncached_cost(sym, args.start, args.end, args.mode)
+            rows.append((sym, q["total_usd"]))
+            total += q["total_usd"]
+        spent = dbs.spend_ledger()["spent_estimate_usd"]
+        for sym, cost in rows:
+            print(f"{sym:4s} ${cost:10.2f}  (not yet downloaded part)")
+        print(f"total ${total:.2f}; already spent ~${spent:.2f}; budget ${args.budget:.2f} -> "
+              + ("FITS" if spent + total <= args.budget else "DOES NOT FIT: nothing will be downloaded"))
         return
-    res = dbs.fetch(args.instrument, args.start, args.end, mode=args.mode)
+    try:
+        res = dbs.fetch(args.instrument, args.start, args.end, mode=args.mode, budget_usd=args.budget)
+    except dbs.BudgetExceeded as exc:
+        print(exc)
+        sys.exit(4)
     print(json.dumps({k: res.provenance[k] for k in ("output_file", "output_rows", "rolls", "construction")}, indent=2, default=str))
 
 
@@ -311,7 +324,8 @@ def main(argv=None):
     p.add_argument("--start", required=True)
     p.add_argument("--end", required=True)
     p.add_argument("--mode", default="parent", choices=["parent", "continuous"])
-    p.add_argument("--estimate-only", action="store_true")
+    p.add_argument("--estimate-only", action="store_true", help="free quote; comma-separate instruments to quote several")
+    p.add_argument("--budget", type=float, default=125.0, help="hard spending cap in USD (default: the $125 free credit)")
     p.set_defaults(func=cmd_fetch)
     p = sub.add_parser("dq-report", help="real-data quality report; seals the lockbox")
     p.add_argument("--data", required=True)

@@ -73,3 +73,11 @@ def instrument():
 def _isolated_research_dir(tmp_path, monkeypatch):
     """Tests must never touch the real research registry / lockbox ledger."""
     monkeypatch.setenv("ORB_RESEARCH_DIR", str(tmp_path / "research"))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Tests must never write to the real data/ directory (e.g. the Databento spend ledger)."""
+    from orb_lab.data_sources import databento_source
+
+    monkeypatch.setattr(databento_source, "DATA_DIR", tmp_path / "data")
