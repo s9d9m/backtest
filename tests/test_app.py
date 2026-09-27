@@ -80,7 +80,7 @@ def test_no_data_shows_a_welcome_instead_of_errors():
     at.run()
     assert not at.exception
     assert "Welcome" in _html(at)
-    assert any(b.label == "Load free SPY data (no account)" for b in at.button)
+    assert any(b.label == "Load free 6E data (no account)" for b in at.button)
     for page in PAGES:
         _go(at, page)
 
@@ -232,3 +232,31 @@ def test_full_research_workflow_in_the_dashboard():
     assert "Blind OOS" in _html(at)
     _go(at, "settings")
     assert not at.exception
+
+
+def test_free_6e_futures_data_uses_the_futures_spec(tmp_path):
+    """Free Yahoo 6E=F bars load as Euro FX futures: contracts, $6.25 per 0.00005 tick, futures costs; 6E is preferred on autoload."""
+    from orb_lab.data_sources import yahoo
+
+    from .test_phase0 import FakeTicker, yahoo_frame
+
+    dates = [str(d.date()) for d in pd.bdate_range("2024-06-03", "2024-06-28") if str(d.date()) != "2024-06-19"]
+    frame = yahoo_frame(dates) / 400.0  # EUR/USD-like price level
+    frame["Volume"] = 1000
+    for sym, f in (("SPY", yahoo_frame(dates)), ("6E", frame)):
+        yahoo.download(sym, "5m", dates[0], "2024-06-29", chunk_days=40, ticker=FakeTicker(f), data_dir=yahoo.DATA_DIR / "dashboard_yahoo",
+                       decimals=6 if sym == "6E" else 4)
+    at = AppTest.from_file(APP, default_timeout=600)
+    at.run()
+    assert not at.exception, at.exception
+    inst = at.session_state["instrument"]
+    assert inst.symbol == "6E" and inst.unit == "contract" and inst.tick_size == 0.00005 and inst.tick_value == 6.25
+    assert any("FREE 6E DATA" in t for t in _texts(at))
+    assert not any("FREE PROXY DATA" in t for t in _texts(at))
+    _go(at, "strategy")
+    assert _widget(at.number_input, "Commission ($ per contract per side)").value == pytest.approx(0.85)
+    assert not any("per share" in (ni.label or "") for ni in at.number_input)
+    _go(at, "backtest")
+    assert "Ending balance" in _html(at)
+    _go(at, "data")
+    assert "free Yahoo continuous" in _html(at)

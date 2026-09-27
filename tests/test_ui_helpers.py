@@ -90,3 +90,9 @@ def test_strategy_description_is_plain_language():
     assert text.startswith("QQQ · 09:30 ORB · 15m range · 15m entry · Market · Midpoint stop · 0.75R target")
     assert S.params_text(p).startswith("09:30 ORB")
     assert S.stop_text(StrategyParams(stop_method="or_pct", stop_param=0.5)) == "50% of range stop"
+
+
+def test_prices_show_every_tick():
+    assert T.price_decimals(0.00005) == 5 and T.price(1.15405, 0.00005) == "1.15405"  # 6E
+    assert T.price_decimals(0.25) == 2 and T.price(5123.25, 0.25) == "5,123.25"  # ES
+    assert T.price_decimals(0.10) == 2 and T.price_decimals(0.01) == 2

@@ -26,6 +26,8 @@ def render() -> None:
     if S.is_proxy(inst):
         st.warning(f"**FREE PROXY DATA — NOT FUTURES VALIDATION.** {inst.symbol} ETF bars from Yahoo (about 60 days). "
                    "Useful for learning the workflow; far too short to judge an edge.", icon=":material/info:")
+    if S.is_free_futures(ds, inst):
+        st.warning("**FREE 6E DATA — NOT THE RESEARCH DATASET.** Free Yahoo 6E=F data: real Euro FX futures prices, but only ~40 sessions of 5-minute bars, a continuous front-month series spliced by Yahoo at the quarterly roll, and not the validated Databento research dataset. Too short to judge an edge.", icon=":material/info:")
     if S.is_synthetic(ds):
         st.warning("**SYNTHETIC DATA — NOT MARKET EVIDENCE.** For testing the software only.", icon=":material/science:")
 
@@ -103,7 +105,7 @@ def _welcome() -> None:
     T.note("Welcome. ORB Lab tests whether <b>Opening Range Breakout</b> strategies have an edge after realistic costs, using "
            "out-of-sample tests. To begin, load free market data (no account, no card).", "info")
     c = st.columns(3)
-    for col, (n, title, text) in zip(c, [("1", "Load data", "Free Yahoo SPY/QQQ 5-minute bars (last ~60 days)."),
+    for col, (n, title, text) in zip(c, [("1", "Load data", "Free Yahoo 6E (Euro FX futures) or SPY/QQQ 5-minute bars (last ~60 days)."),
                                           ("2", "Define a strategy", "Opening range, entry, stop, target, risk per trade."),
                                           ("3", "Test it honestly", "Backtest, optimise, then validate on unseen data.")]):
         col.markdown(f'<div class="orb-card"><div class="ttl">Step {n}</div><div class="body"><b>{title}</b><br>'

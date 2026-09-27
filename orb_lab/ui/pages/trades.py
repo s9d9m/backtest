@@ -83,10 +83,12 @@ def render() -> None:
                 T.kpi("Win rate", T.pct(wins, 0), ""), T.kpi("Expectancy", T.rmult(view["r_multiple"].mean()), ""),
                 T.kpi("Net P&L", T.usd(view["net_pnl"].sum(), signed=True), "")], min_width=150)
     table = view[[c for c in TABLE_COLS if c in view]].rename(columns=TABLE_COLS)
+    pdp = T.price_decimals(S.instrument().tick_size)
     st.dataframe(table, hide_index=True, width="stretch", height=320, column_config={
         "Date": st.column_config.DateColumn(format="YYYY-MM-DD"), "Entry time": st.column_config.DatetimeColumn(format="HH:mm"),
         "Net P&L": st.column_config.NumberColumn(format="dollar"), "Risk $": st.column_config.NumberColumn(format="dollar"),
-        "R": st.column_config.NumberColumn(format="%+.2f"), "Qty": st.column_config.NumberColumn(format="%.0f")})
+        "R": st.column_config.NumberColumn(format="%+.2f"),
+        "Entry price": st.column_config.NumberColumn(format=f"%.{pdp}f"), "Exit price": st.column_config.NumberColumn(format=f"%.{pdp}f"), "Qty": st.column_config.NumberColumn(format="%.0f")})
     c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
     idx = view.index.tolist()
     labels = {i: f"#{int(view.loc[i, 'trade_id'])} · {view.loc[i, 'session_date'].date()} · {view.loc[i, 'direction']} · "
@@ -95,13 +97,14 @@ def render() -> None:
     c2.download_button("Download filtered trades (CSV)", view.to_csv(index=False).encode(), file_name="trades.csv", icon=":material/download:",
                        width="stretch")
     t = view.loc[sel]
+    tick = S.instrument().tick_size
     T.kpi_grid([
         T.kpi("Result", T.rmult(t["r_multiple"]), T.usd(t["net_pnl"], signed=True, dp=2), tone="good" if t["net_pnl"] > 0 else "bad"),
         T.kpi("Side & exit", f"{t['direction'].capitalize()}", f"exit: {t['exit_reason']}"),
-        T.kpi("Entry", f"{t['entry_price']:,.2f}",
-              f"exit {t['exit_price']:,.2f} · {pd.Timestamp(t['entry_time']).tz_convert('America/New_York'):%H:%M} → "
+        T.kpi("Entry", T.price(t["entry_price"], tick),
+              f"exit {T.price(t['exit_price'], tick)} · {pd.Timestamp(t['entry_time']).tz_convert('America/New_York'):%H:%M} → "
               f"{pd.Timestamp(t['exit_time']).tz_convert('America/New_York'):%H:%M} ET"),
-        T.kpi("Stop", f"{t['stop_price']:,.2f}", ("target " + (f"{t['target_price']:,.2f}" if pd.notna(t.get("target_price")) else "none"))
+        T.kpi("Stop", T.price(t["stop_price"], tick), ("target " + (T.price(t["target_price"], tick) if pd.notna(t.get("target_price")) else "none"))
               + f" · risk {T.usd(t.get('risk_dollars'))} · {t.get('qty', 0):,.0f} {S.instrument().unit}s"),
         T.kpi("Costs", T.usd(t.get("total_cost"), dp=2), "commission + fees + friction + slippage"),
     ], min_width=170)

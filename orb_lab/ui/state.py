@@ -39,7 +39,9 @@ PAGES = {
     "data": ("Data", ":material/database:"),
     "settings": ("Settings & research", ":material/settings:"),
 }
-YAHOO = "Free Yahoo (SPY/QQQ)"
+YAHOO = "Free Yahoo (6E, SPY, QQQ)"
+#: free Yahoo instruments: dashboard symbol -> (Yahoo ticker, price decimals). 6E uses the real futures spec.
+FREE_YAHOO = {"6E": ("6E=F", 6), "SPY": ("SPY", 4), "QQQ": ("QQQ", 4)}
 STOP_LABELS = {"or_opposite": "Opposite side of range", "or_mid": "Range midpoint", "or_pct": "% of range width",
                "atr": "Multiple of daily ATR", "fixed_ticks": "Fixed ticks"}
 ENTRY_LABELS = {"market": "Market (close confirmed)", "limit": "Limit (retest of the range)", "stop": "Stop order (intrabar breakout)"}
@@ -75,6 +77,13 @@ def is_proxy(inst=None) -> bool:
     return inst is not None and getattr(inst, "asset_class", "future") == "etf"
 
 
+def is_free_futures(ds=None, inst=None) -> bool:
+    """Free Yahoo continuous futures (e.g. 6E=F): real futures prices, but short, spliced across rolls, unvalidated."""
+    ds, inst = ds or dataset(), inst or instrument()
+    return (ds is not None and inst is not None and not is_proxy(inst)
+            and str(getattr(ds.loaded, "source", "")).startswith("Yahoo"))
+
+
 def is_synthetic(ds=None) -> bool:
     ds = ds or dataset()
     return ds is not None and str(getattr(ds.loaded, "source", "")).startswith("synthetic")
@@ -86,6 +95,13 @@ def etf_instruments() -> dict:
     cfg = load_config()
     headline = float(cfg["headline_friction_usd_per_share"])
     return {sym: etf_instrument(sym, cfg, headline) for sym in cfg["instruments"]}
+
+
+def free_instruments() -> dict:
+    """Instruments available from free Yahoo data, with the correct specification for each (futures vs ETF)."""
+    futures = load_instruments()
+    etfs = etf_instruments()
+    return {sym: (futures[sym] if sym in futures else etfs[sym]) for sym in FREE_YAHOO}
 
 
 def all_instruments() -> dict:
@@ -107,12 +123,13 @@ def yahoo_path(symbol: str, refresh: bool) -> tuple[Path, str]:
 
     saved = yahoo_saved_copy(symbol)
     if saved is not None and not refresh:
-        return saved, f"Yahoo {symbol} 5m (saved copy)"
+        return saved, f"Yahoo {FREE_YAHOO.get(symbol, (symbol,))[0]} 5m (saved copy)"
     dash_dir = yahoo.DATA_DIR / "dashboard_yahoo"
     today = pd.Timestamp.now(tz="America/New_York").normalize().tz_localize(None)
+    ticker, decimals = FREE_YAHOO.get(symbol, (symbol, 4))
     prov = yahoo.download(symbol, "5m", str((today - pd.Timedelta(days=58)).date()), str((today + pd.Timedelta(days=1)).date()),
-                          chunk_days=29, data_dir=dash_dir)
-    return dash_dir / "phase0" / f"{symbol}_5m.parquet", (f"Yahoo {symbol} 5m downloaded {prov['download_utc'][:16]} UTC "
+                          chunk_days=29, data_dir=dash_dir, yahoo_symbol=ticker, decimals=decimals)
+    return dash_dir / "phase0" / f"{symbol}_5m.parquet", (f"Yahoo {ticker} 5m downloaded {prov['download_utc'][:16]} UTC "
                                                          f"({prov['returned_first_bar'][:10]}..{prov['returned_last_bar'][:10]})")
 
 
@@ -183,11 +200,11 @@ def autoload() -> None:
     if dataset() is not None or S().get("autoload_done"):
         return
     S()["autoload_done"] = True
-    etfs = etf_instruments()
-    for sym in ("SPY", "QQQ"):
+    free = free_instruments()
+    for sym in FREE_YAHOO:  # 6E first
         if yahoo_saved_copy(sym) is not None:
             try:
-                load_dataset(YAHOO, etfs[sym], symbol=sym)
+                load_dataset(YAHOO, free[sym], symbol=sym)
                 S()["autoloaded"] = sym
             except Exception:  # never block the app on autoload
                 pass

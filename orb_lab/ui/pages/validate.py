@@ -281,7 +281,7 @@ def _launch_form() -> None:
             "execution": S.strategy()["execution"].to_dict(),
             "selection": {"min_trades_train": int(min_tr), "min_trades_val": int(min_va), "n_finalists": int(n_fin)}, "families": families,
             "start": str(start), "end": str(end), "n_workers": int(workers), "starting_equity": float(equity), "risk_pct": float(risk) / 100,
-            "data": {**ds.describe(), "data_hash": prep.data_hash, "source": ds.loaded.source, "symbol": inst.symbol, "proxy": S.is_proxy(inst),
+            "data": {**ds.describe(), "data_hash": prep.data_hash, "source": ds.loaded.source, "symbol": inst.symbol, "proxy": S.is_proxy(inst), "free_futures": S.is_free_futures(ds, inst),
                      "synthetic": S.is_synthetic(ds)}, "n_configs": n_cfg}
     job_dir = jobs.submit("wfo", spec, prep)
     st.success(f"Launched: {n_cfg:,} configurations × {len(structs)} structure(s) × {len(families)} family(ies). Progress appears below; "
@@ -341,6 +341,8 @@ def _browse(runs: list[Path]) -> None:
     spec = json.loads(spec_file.read_text()) if spec_file.exists() else {}
     if data.get("proxy"):
         st.warning("Free proxy data (ETF). Not futures validation.")
+    if data.get("free_futures"):
+        st.warning("Free Yahoo continuous futures data (short sample). Not the validated research dataset.")
     if data.get("synthetic") or "synthetic" in str(data.get("source", "")):
         st.warning("Synthetic data. Software test only; not market evidence.")
     d = run / structure / family

@@ -102,8 +102,15 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def download(symbol: str, interval: str, start: str, end: str, chunk_days: int, ticker=None, data_dir: Path | None = None) -> dict:
-    """Download [start, end) in chunks (cached raw files), then build the canonical processed file."""
+def download(symbol: str, interval: str, start: str, end: str, chunk_days: int, ticker=None, data_dir: Path | None = None,
+             yahoo_symbol: str | None = None, decimals: int = 4) -> dict:
+    """Download [start, end) in chunks (cached raw files), then build the canonical processed file.
+
+    ``symbol`` names the files; ``yahoo_symbol`` is what Yahoo is asked for (e.g. ``6E`` -> ``6E=F``).
+    ``decimals`` must resolve the instrument's tick (4 for $0.01 stocks, 6 for 6E's 0.00005).
+    """
+    if ticker is None and yahoo_symbol:
+        ticker = _ticker(yahoo_symbol)
     data_dir = data_dir or DATA_DIR
     raw_dir = data_dir / "raw" / "yahoo" / symbol
     out_dir = data_dir / "phase0"
@@ -134,10 +141,10 @@ def download(symbol: str, interval: str, start: str, end: str, chunk_days: int, 
         raise YahooUnavailable(f"{symbol} {interval}: Yahoo returned no bars for {start}..{end}; errors: {errors[:3]}")
     raw = pd.concat(frames)
     tzname = str(raw.index.tz)
-    # 4-decimal rounding only removes float representation noise (e.g. 766.590027 -> 766.5900); genuine
-    # sub-penny prints (e.g. 766.585) are kept.
+    # Rounding only removes float representation noise (e.g. 766.590027 -> 766.5900 at 4 decimals); genuine
+    # sub-tick prints are kept. 6E needs 6 decimals for its 0.00005 tick.
     processed = pd.DataFrame(
-        {"timestamp": raw.index.tz_convert("UTC"), **{c.lower(): raw[c].to_numpy().round(4) for c in ("Open", "High", "Low", "Close")},
+        {"timestamp": raw.index.tz_convert("UTC"), **{c.lower(): raw[c].to_numpy().round(decimals) for c in ("Open", "High", "Low", "Close")},
          "volume": raw["Volume"].to_numpy()}
     )
     out = out_dir / f"{symbol}_{interval}.parquet"
@@ -148,6 +155,7 @@ def download(symbol: str, interval: str, start: str, end: str, chunk_days: int, 
         "experiment_family": EXPERIMENT_FAMILY,
         "label": PHASE0_LABEL,
         "symbol": symbol,
+        "yahoo_symbol": yahoo_symbol or symbol,
         "source": f"Yahoo Finance via yfinance {yfinance.__version__} (free, no key, no account)",
         "download_utc": datetime.now(timezone.utc).isoformat(),
         "requested_start": start,

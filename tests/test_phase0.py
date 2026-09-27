@@ -207,3 +207,13 @@ def test_trade_log_columns_and_control_reproduces_engine(tmp_path):
     # friction reduces every trade's R by exactly 2*friction/risk
     r0 = p0.split_result(prep, params, inst, 0.0, 100, pd.Timestamp(dates[0]), pd.Timestamp(dates[-1]))["_trades"]
     assert np.allclose(r0["r_multiple"] - t["r_multiple"], 0.04 / (t["risk_ticks"] * 0.01))
+
+
+def test_yahoo_download_keeps_6e_tick_precision(tmp_path):
+    """6E ticks are 0.00005: prices must keep 5+ decimals (the ETF default of 4 would corrupt them)."""
+    dates = ["2024-06-03", "2024-06-04"]
+    f = yahoo_frame(dates) / 400.0
+    yahoo.download("6E", "5m", dates[0], "2024-06-05", chunk_days=3, ticker=FakeTicker(f), data_dir=tmp_path, decimals=6)
+    out = pd.read_parquet(tmp_path / "phase0" / "6E_5m.parquet")
+    assert np.allclose(out["close"].to_numpy(), f["Close"].round(6).to_numpy())
+    assert not np.allclose(out["close"].to_numpy(), f["Close"].round(4).to_numpy())

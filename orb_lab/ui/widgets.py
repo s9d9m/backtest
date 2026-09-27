@@ -14,7 +14,7 @@ from ..reports.metric_help import HEADLINE, cautions, metric_table
 from . import state as S
 from . import theme as T
 
-ORB_STARTS = ["09:00", "09:15", "09:30", "09:45", "10:00"]
+ORB_STARTS = ["08:00", "08:20", "08:30", "09:00", "09:15", "09:30", "09:45", "10:00"]
 RANGES = [5, 10, 15, 20, 30, 45, 60]
 ENTRY_TFS = [1, 2, 3, 5, 10, 15]
 TARGETS = [0.0, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0, 1.1, 1.2, 1.25, 1.3, 1.4, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0]
@@ -69,11 +69,11 @@ def need_data() -> bool:
         return False
     T.note("No market data is loaded yet. Research pages need price data to run.", "warn")
     c1, c2, _ = st.columns([1.3, 1, 2])
-    if c1.button("Load free SPY data (no account)", type="primary", key=f"quick_load_{st.session_state.get('nav', '')}"):
-        with st.spinner("Loading free Yahoo SPY 5-minute bars..."):
+    if c1.button("Load free 6E data (no account)", type="primary", key=f"quick_load_{st.session_state.get('nav', '')}"):
+        with st.spinner("Loading free Yahoo 6E (Euro FX futures) 5-minute bars..."):
             try:
-                msg = S.load_dataset(S.YAHOO, S.etf_instruments()["SPY"], symbol="SPY")
-                st.success(f"Loaded SPY: {msg}.")
+                msg = S.load_dataset(S.YAHOO, S.free_instruments()["6E"], symbol="6E")
+                st.success(f"Loaded 6E: {msg}.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not load data: {exc}")
@@ -136,7 +136,7 @@ def strategy_editor() -> None:
             with st.container(border=True):
                 st.markdown("**Opening range**")
                 c = st.columns(2)
-                orb_start = c[0].selectbox("Range starts at (ET)", ORB_STARTS, index=idx(ORB_STARTS, p.orb_start, 2), key=k("start"),
+                orb_start = c[0].selectbox("Range starts at (ET)", ORB_STARTS, index=idx(ORB_STARTS, p.orb_start, 5), key=k("start"),
                                            help="The opening range covers the first minutes after this time.")
                 rng = c[1].selectbox("Range length", ranges, index=idx(ranges, p.range_minutes), key=k("range"),
                                      format_func=lambda x: f"{x} minutes", help=f"Only multiples of the loaded {base}-minute bars.")

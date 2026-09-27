@@ -75,6 +75,18 @@ def ratio(x, dp: int = 2) -> str:
     return (MINUS if x < 0 else "") + f"{abs(x):.{dp}f}"
 
 
+def price_decimals(tick_size: float) -> int:
+    """Decimals needed to show every tick: 2 for $0.01/0.25, 1 for gold's 0.10, 5 for 6E's 0.00005."""
+    d = 0
+    while d < 8 and abs(round(tick_size, d) - tick_size) > 1e-12:
+        d += 1
+    return max(d, 2)
+
+
+def price(x, tick_size: float) -> str:
+    return "—" if _bad(x) else f"{x:,.{price_decimals(tick_size)}f}"
+
+
 def count(x) -> str:
     return "—" if _bad(x) else f"{int(x):,}"
 

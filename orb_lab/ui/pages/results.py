@@ -63,6 +63,8 @@ def build_stages(for_overview: bool = False, wfo_pick: tuple[str, dict] | None =
         stages["grid"] = S.S()["grid"].selection_bias
     if S.is_proxy(inst):
         stages["limitations"] = ["ETF proxy data from Yahoo (~60 days of 5-minute bars): far too short for conclusions about futures."]
+    elif S.is_free_futures(ds, inst):
+        stages["limitations"] = ["Free Yahoo 6E=F data: real Euro FX futures prices, but only ~40 sessions of 5-minute bars, a continuous front-month series spliced by Yahoo at the quarterly roll, and not the validated Databento research dataset. Too short to judge an edge."]
     return stages
 
 
@@ -88,6 +90,8 @@ def render() -> None:
                "INSUFFICIENT EVIDENCE = no or too little out-of-sample testing. In-sample results never change the verdict.")
     if stages["data"]["proxy"]:
         st.warning("Free proxy ETF data — not futures validation.")
+    if S.is_free_futures():
+        st.warning("Free Yahoo 6E=F data (~40 sessions, continuous front month) — not the validated research dataset.")
     if stages["data"]["synthetic"]:
         st.warning("Synthetic data — not market evidence.")
 

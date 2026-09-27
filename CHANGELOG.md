@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.1: Free 6E (Euro FX futures) data
+- New free data source: Yahoo **6E=F** 5-minute bars (last ~60 days, full Globex hours), loaded with the real 6E
+  futures specification (contracts, 0.00005 tick = $6.25, futures commission and fees). It is the first free market
+  on the Data page and is preferred when the app opens; the Overview offers **Load free 6E data**.
+- Clearly labelled as free continuous front-month data (short, spliced at the roll, not the Databento research
+  dataset) on Overview, Data, Validate and Results.
+- `yahoo.download` keeps 6 decimals for 6E (the ETF default of 4 would have corrupted 0.00005 prices) and records the
+  Yahoo ticker in the provenance.
+- Opening-range start times 08:00, 08:20 (CME FX pit open) and 08:30 ET added to the strategy editor.
+- Prices are shown with the decimals the instrument's tick needs (1.15405 for 6E, not 1.15).
+- Verified on real data: 40 sessions (2026-07-31 to 2026-09-25), data-quality gate passes (32 zero-volume bars noted).
+- 180 tests (+3): 6E download precision, 6E dashboard load with the futures spec, price formatting.
+
 ## 0.6.0: UI/UX redesign (presentation only; no research calculations changed)
 - **New information architecture**, research first, data and administration last: Overview · Strategy · Backtest ·
   Optimize · Validate · Stress test · Results · Trade explorer · Data · Settings & research. Sidebar menu; only the

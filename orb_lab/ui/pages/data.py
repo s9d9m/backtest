@@ -29,7 +29,8 @@ def render() -> None:
             T.kpi("Data quality", "Pass" if ds.report.ok and rep["n_errors"] == 0 else "Errors", f"{rep['n_errors']} errors · {rep['n_warnings']} warnings",
                   tone="good" if rep["n_errors"] == 0 else "bad"),
             T.kpi("Kind", "ETF proxy" if S.is_proxy(inst) else "Synthetic" if S.is_synthetic(ds) else "Futures",
-                  "not futures validation" if S.is_proxy(inst) else "", tone="warn" if S.is_proxy(inst) or S.is_synthetic(ds) else "none"),
+                  "not futures validation" if S.is_proxy(inst) else "free Yahoo continuous" if S.is_free_futures(ds, inst) else "",
+                  tone="warn" if S.is_proxy(inst) or S.is_synthetic(ds) or S.is_free_futures(ds, inst) else "none"),
         ], min_width=170)
     _loader()
     ds = S.dataset()
@@ -67,6 +68,7 @@ def render() -> None:
 
 def _loader() -> None:
     etfs = S.etf_instruments()
+    free = S.free_instruments()
     with st.container(border=True):
         st.markdown("**Load data**")
         c = st.columns([1.6, 1])
@@ -75,11 +77,14 @@ def _loader() -> None:
         s_start, s_end, seed, trend = "2021-01-04", "2021-12-30", 7, 0.0
         if source == S.YAHOO:
             cc = st.columns([1, 2])
-            symbol = cc[0].selectbox("ETF", list(etfs), key="data_etf")
-            inst = etfs[symbol]
+            symbol = cc[0].selectbox("Market", list(free), key="data_etf",
+                                     format_func=lambda k: f"{k} · Euro FX futures (contracts)" if k == "6E" else f"{k} · ETF (shares)")
+            inst = free[symbol]
             saved = S.yahoo_saved_copy(symbol)
             cc[1].caption(("Cached copy found (" + str(saved.name) + ")." if saved else "No cached copy: the last ~60 days will be downloaded (about 30 s).")
-                          + " Free, no account. FREE PROXY — NOT FUTURES VALIDATION.")
+                          + (" Free, no account. Yahoo 6E=F: continuous front-month futures, 5-minute bars, full Globex hours; "
+                             "sized in contracts ($6.25 per 0.00005 tick)." if symbol == "6E" else
+                             " Free, no account. FREE PROXY — NOT FUTURES VALIDATION."))
             refresh = cc[1].checkbox("Download fresh data from Yahoo", value=False, key="data_refresh")
         else:
             instruments = S.all_instruments()

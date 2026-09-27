@@ -58,11 +58,12 @@ The menu on the left is ordered the way research normally flows. You rarely need
 | **Stress test** | Parameter robustness (plateau or spike), execution sensitivity (more slippage, higher costs, worse fills) and Monte Carlo (how bad the path could have been). |
 | **Results** | One page with every stage and the verdict: PROMISING, MIXED, NO PRELIMINARY EVIDENCE or INSUFFICIENT EVIDENCE. Download it as a report. |
 | **Trade explorer** | Every trade, with filters (dates, long/short, winners/losers, entry type, R) and a chart of the chosen trade. CSV download. |
-| **Data** | Load or change data: free Yahoo SPY/QQQ, your own CSV/Parquet file, or synthetic test data. Data-quality checks, sessions, provenance, and the (inactive) plan for real futures data. |
+| **Data** | Load or change data: free Yahoo **6E** (Euro FX futures, `6E=F`) or SPY/QQQ, your own CSV/Parquet file, or synthetic test data. Data-quality checks, sessions, provenance, and the (inactive) plan for real futures data. |
 | **Settings & research** | Market cost tables, frozen strategies and fingerprints, the holdout ledger, the research registry, software self-checks and the Phase-0 archive. |
 
 ### A first session (about 10 minutes)
-1. **Overview**: if there is no data yet, click **Load free SPY data** (about 30 seconds, no account).
+1. **Overview**: if there is no data yet, click **Load free 6E data** (Euro FX futures, about 30 seconds, no account).
+   SPY and QQQ are also available on the **Data** page.
 2. **Validate → Blind holdout test → Save split and withhold the holdout.** Do this before optimising.
 3. **Optimize → RUN OPTIMIZATION**, then *Use this strategy* on the robust candidate.
 4. **Stress test**: run the three tabs.
@@ -74,4 +75,7 @@ The menu on the left is ordered the way research normally flows. You rarely need
 - Hover the small **?** icons for plain-English explanations of every statistic.
 - Nothing here can spend money. The paid futures data source (Databento) is prepared but switched off (see **Data**).
 - Everything about SPY/QQQ is a **FREE PROXY — NOT FUTURES VALIDATION**.
+- Free **6E** data is real Euro FX futures prices (sized in contracts, $6.25 per 0.00005 tick, futures costs), but only
+  ~40 sessions of 5-minute bars, a continuous front-month series spliced by Yahoo at the quarterly roll. Good for
+  learning and exploring 6E; far too short to prove an edge. The full 6E study uses Databento 1-minute data later.
 - Walk-forward runs keep going in the background even if you close the browser tab.

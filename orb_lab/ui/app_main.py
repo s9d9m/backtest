@@ -35,7 +35,8 @@ def sidebar() -> str:
         if ds is None:
             st.caption("No data loaded")
         else:
-            kind = "free ETF proxy" if S.is_proxy(inst) else "synthetic" if S.is_synthetic(ds) else "futures"
+            kind = ("free ETF proxy" if S.is_proxy(inst) else "synthetic" if S.is_synthetic(ds) else
+                    "free Yahoo futures" if S.is_free_futures(ds, inst) else "futures")
             split = st.session_state.get("split")
             st.markdown(f'<div style="font-size:0.84rem;color:{T.INK_2};line-height:1.55"><b>{html.escape(inst.symbol)}</b> · {kind}<br>'
                         f'{ds.prep_full.n_days} sessions · {ds.prep_full.dates[0]} – {ds.prep_full.dates[-1]}<br>'
