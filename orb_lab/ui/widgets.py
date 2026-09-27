@@ -77,7 +77,8 @@ def need_data() -> bool:
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not load data: {exc}")
-    S.nav_button("Open the Data page", "data", key=f"to_data_{st.session_state.get('nav', '')}")
+    with c2:
+        S.nav_button("Open the Data page", "data", key=f"to_data_{st.session_state.get('nav', '')}")
     return True
 
 
