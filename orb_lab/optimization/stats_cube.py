@@ -99,10 +99,19 @@ class StatsCube:
     configs: list[StrategyParams]
     data: np.ndarray  # memmap (n_configs, n_months, n_stats)
     key: str
+    bounds: list[tuple[str, str]] | None = None  # first/last session date of each period (session-block cubes)
 
     @property
     def n_configs(self) -> int:
         return len(self.configs)
+
+    def period_dates(self, i: int) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """First and last calendar date covered by period ``i``."""
+        if self.bounds is not None:
+            a, b = self.bounds[i]
+            return pd.Timestamp(a), pd.Timestamp(b)
+        p = pd.Period(self.months[i], "M")
+        return p.start_time.normalize(), p.end_time.normalize()
 
     def month_pos(self, month: str) -> int:
         return self.months.index(month)
@@ -266,6 +275,7 @@ def grouped_stats(
     *,
     n_workers: int = 1,
     chunk_size: int = 500,
+    progress: Callable[[int, int, float], None] | None = None,
 ) -> StatsCube:
     """In-memory cube aggregated by an arbitrary session grouping (e.g. train / validation).
 
@@ -280,11 +290,20 @@ def grouped_stats(
     data = np.zeros((total, n, len(STATS)), dtype=np.float64)
     state = dict(prep=prep, configs=configs, execution=execution, day_month=groups, n_months=n)
     bounds = [(k, k * chunk_size, min((k + 1) * chunk_size, total)) for k in range((total + chunk_size - 1) // chunk_size)]
+    t0, done = time.time(), 0
+
+    def report(lo, hi):
+        nonlocal done
+        done += hi - lo
+        if progress:
+            progress(done, total, time.time() - t0)
+
     if n_workers <= 1 or len(bounds) <= 1:
         _init(state)
         for k, lo, hi in bounds:
             _, lo, hi, block = _chunk(k, lo, hi)
             data[lo:hi] = block
+            report(lo, hi)
     else:
         config_stats(prep, configs[0], execution, groups, n)  # compile first
         method = "forkserver" if "forkserver" in mp.get_all_start_methods() else "spawn"
@@ -292,5 +311,38 @@ def grouped_stats(
             for fut in as_completed([pool.submit(_chunk, k, lo, hi) for k, lo, hi in bounds]):
                 _, lo, hi, block = fut.result()
                 data[lo:hi] = block
+                report(lo, hi)
     return StatsCube(path=Path("."), months=list(labels), sessions_per_month=np.bincount(groups, minlength=n), configs=configs,
                      data=data, key="grouped")
+
+
+def session_blocks(prep: PreparedData, block_sessions: int, start=None) -> tuple[np.ndarray, list[str], list[tuple[str, str]]]:
+    """Group sessions into consecutive blocks of ``block_sessions`` sessions (for short samples).
+
+    Sessions before ``start`` go into a leading ``pre`` group (label ``"pre"``) that walk-forward windows
+    never use; they only provide ATR history. Returns (groups, labels, bounds).
+    """
+    if block_sessions < 1:
+        raise ValueError("block_sessions must be >= 1")
+    dates = pd.DatetimeIndex(np.asarray(prep.dates, dtype="datetime64[D]").astype("datetime64[ns]"))
+    first = int(np.searchsorted(dates, pd.Timestamp(start))) if start is not None else 0
+    groups = np.zeros(prep.n_days, dtype=np.int64)
+    labels, bounds = ["pre"], [(str(dates[0].date()) if len(dates) else "", str(dates[max(first - 1, 0)].date()) if len(dates) else "")]
+    k = 0
+    for lo in range(first, prep.n_days, block_sessions):
+        hi = min(lo + block_sessions, prep.n_days)
+        k += 1
+        groups[lo:hi] = k
+        labels.append(str(dates[lo].date()))
+        bounds.append((str(dates[lo].date()), str(dates[hi - 1].date())))
+    return groups, labels, bounds
+
+
+def build_session_cube(prep: PreparedData, configs: list[StrategyParams], execution: ExecutionParams, block_sessions: int, *,
+                       start=None, n_workers: int = 1, chunk_size: int = 500, progress=None) -> StatsCube:
+    """Cube over blocks of sessions instead of calendar months. Period 0 is the unused ``pre`` group."""
+    groups, labels, bounds = session_blocks(prep, block_sessions, start)
+    cube = grouped_stats(prep, configs, execution, groups, labels, n_workers=n_workers, chunk_size=chunk_size, progress=progress)
+    cube.bounds = bounds
+    cube.key = f"sessions{block_sessions}_" + cube_key(prep, configs, execution)
+    return cube

@@ -46,38 +46,61 @@ never charges you.
 
 ## Using the dashboard
 
-The tabs are along the top; the controls are on the left.
+The tabs are along the top; the data controls are on the left. Everything works in the browser; you do not
+need the terminal.
 
-1. **PHASE-0 RESULTS** (opens first) shows the finished free experiment without downloading anything:
-   - the conclusion for SPY and QQQ;
-   - the trade log (downloadable as CSV);
-   - charts of individual trades (orange band = opening range, triangle = entry, dashed lines =
-     stop/target, X = exit);
-   - heatmaps and the cost table.
-2. To try your **own** settings on free data:
-   1. Leave **Data source = Free Yahoo (SPY/QQQ)** and pick **SPY** or **QQQ**.
-   2. Click **Load data**. It uses the saved copy if there is one, otherwise it downloads the last
-      ~60 days from Yahoo (about 30 seconds).
-   3. Tick "Download fresh data" only if you want the newest days.
-   4. **DATA** tab: the data-quality check (it should say 0 errors).
-   5. **BACKTEST** tab:
-      - choose the opening-range length, entry type, stop, target (R), last entry time and direction;
-      - **Commission/side** is the cost per share per fill (default $0.02), and **Shares** is the
-        position size;
-      - click **RUN BACKTEST** to see the equity curve, statistics and trades. Scroll down for charts
-        and the cost-sensitivity button.
-   6. **TRADE LOG** tab: every trade of your last backtest (downloadable).
-   7. **OPTIMIZATION** tab: tries many settings at once and shows heatmaps.
-      - Remember: with only ~40 days of data, the "best" row is mostly luck. Look for broad blue areas
-        in the heatmaps, not the single best number.
-3. **WALK-FORWARD**, **ROBUSTNESS** and **MONTE CARLO** are for the full futures study later. With
-   free data they are empty or informational. That is expected.
+### 1. Load data (left sidebar)
+- Leave **Data source = Free Yahoo (SPY/QQQ)**, pick **SPY** or **QQQ**, click **Load data**. It uses the
+  saved copy if there is one, otherwise downloads the last ~60 days (about 30 seconds). Tick "Download fresh
+  data" only if you want the newest days.
+- **Synthetic** data is for testing the software only (a yellow banner says so).
+
+### 2. PIPELINE tab: the guided workflow
+It shows each stage with ✅ / ⬜ / ⚠️:
+**DATA → SPLIT → BACKTEST / OPTIMIZE → VALIDATE → FREEZE → WALK-FORWARD → ROBUSTNESS + STRESS → MONTE CARLO → BLIND HOLDOUT → REPORT**
+1. **Save split and withhold the holdout** (do this first). The last 20 % of days becomes a *blind
+   holdout* that no other tab can see.
+2. Explore in **BACKTEST**, search in **OPTIMIZATION** (it defaults to the *train* days only).
+3. Back in PIPELINE: **Evaluate on train and validation**, pick one, **Use as candidate**.
+4. **FREEZE** it (creates a locked file with a fingerprint).
+5. **RUN BLIND HOLDOUT TEST** once. Only the first test counts as blind.
+
+### 3. The other tabs
+- **BACKTEST**: one parameter set.
+  - Costs are labelled with units: every $ amount is **per share (or per contract) per side**, e.g.
+    $0.02/share friction = $0.04 per share per round trip.
+  - Sizing: fixed quantity, or **risk % per trade** (0.25 / 0.5 / 1 / 2 % or custom) of a starting equity
+    such as $40,000. The trade log shows shares/contracts and $ at risk for every trade.
+  - Under the numbers: **"What do these numbers mean?"** explains every metric and warns when the sample
+    is too small. Open **"Equity & risk view"** for equity, drawdown, cumulative R, trade-by-trade P&L and
+    position size. **Run execution stress test** re-runs the setup with worse fills and higher costs and
+    says ROBUST, FRAGILE or NOT POSITIVE.
+- **OPTIMIZATION**: tries many settings. Choose a *reduced* preset; a *comprehensive* search needs an
+  extra tick-box. The table shows how many configurations were searched, how many "effective" independent
+  tries that is, what the best result would look like **by luck alone**, and whether each row is a
+  *plateau* (neighbours also work) or a *spike* (probably luck). **Use as candidate** sends a row to the
+  other tabs.
+- **WALK-FORWARD**: open "Configure and launch", choose the window unit (use **trading sessions** for the
+  free ~60-day data; the **months** presets 12/3/3/3, 24/3/3, 24/6/6, 36/6/6 are for the real futures
+  data later), a parameter space and costs, then **LAUNCH**. It runs in the background with a progress
+  bar; you can **Stop** and **Resume**. Only the blue **blind OOS** parts are evidence; training and
+  validation numbers are not.
+- **ROBUSTNESS**: pick the candidate, **RUN NEIGHBOURHOOD SWEEP**. Each chart changes one setting
+  (orange bar = your candidate). Verdict PLATEAU is good, SPIKE means fragile. You can also draw a
+  two-setting heatmap.
+- **MONTE CARLO**: choose which trades to simulate (candidate, last backtest, walk-forward OOS or blind
+  holdout), number of simulations and method, then **RUN**. Orange = what happened, grey = simulated.
+- **TRADE LOG**: every trade of the last backtest with size, risk and each cost (CSV download).
+- **DIAGNOSTICS**: software self-checks (random-walk data must show no edge, planted edge must be found,
+  deleting future data must not change past trades, cost units, full test suite). Not market results.
+- **REPORT**: one page per candidate across all stages, with a verdict: PROMISING, MIXED, NO PRELIMINARY
+  EVIDENCE or INSUFFICIENT EVIDENCE. Download it as Markdown.
+- **PHASE-0 RESULTS**: the finished free SPY/QQQ experiment (read-only).
 
 ### Good to know
-
-- Nothing here can spend money. The only paid data source (Databento) needs a key you have not
-  entered, and even then the downloader refuses anything above a budget cap.
-- Yahoo only provides about **60 days** of 5-minute bars, so results on this data are too small a
-  sample to prove or disprove an edge.
+- Nothing here can spend money. The paid futures data source (Databento) is prepared but switched off;
+  see "Real futures data" at the bottom of PIPELINE.
+- Yahoo only provides about **60 days** of 5-minute bars. Every result on this data is far too small a
+  sample to prove or disprove an edge, and the report will say so.
 - If a button seems to do nothing, look at the top right of the page. "Running…" means it is still
-  working (a big optimization can take a few minutes).
+  working. Walk-forward runs keep going in the background even if you close the tab.

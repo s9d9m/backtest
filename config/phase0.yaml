@@ -12,7 +12,10 @@ etf_spec:
   tick_size: 0.01          # minimum price increment for SPY/QQQ (> $1 NMS stocks/ETFs)
   tick_value: 0.01         # $ per tick per share
   multiplier: 1
-  commission_per_side: 0.0 # commission-free retail brokerage; friction is modelled as adverse execution
+  commission_per_side: 0.0 # $/share/side; commission-free retail brokerage
+  # friction ($/share/side, modelled bid/ask + adverse execution) is set from friction_grid below
+  asset_class: etf         # sized in SHARES, never contracts
+  max_notional_leverage: 4 # position notional <= 4 x equity (typical intraday buying power)
   exchange_fee_per_side: 0.0
   calendar: XNYS
   session_open: "18:00"    # no ETF bars after 16:00, so this only keeps session assignment on the calendar date

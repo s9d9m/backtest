@@ -88,3 +88,12 @@ def _isolated_yahoo_dir(tmp_path, monkeypatch):
     from orb_lab.data_sources import yahoo
 
     monkeypatch.setattr(yahoo, "DATA_DIR", tmp_path / "data")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_pipeline_and_jobs(tmp_path, monkeypatch):
+    """Dashboard pipeline state and background jobs go to a temporary directory in tests."""
+    from orb_lab import jobs
+
+    monkeypatch.setenv("ORB_PIPELINE_DIR", str(tmp_path / "pipeline"))
+    monkeypatch.setattr(jobs, "JOBS_DIR", tmp_path / "jobs")

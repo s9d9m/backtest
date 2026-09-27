@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+ASSET_CLASSES = ("future", "etf")
+UNITS = {"future": "contract", "etf": "share"}
 
 
 @dataclass(frozen=True)
@@ -31,8 +33,19 @@ class Instrument:
     min_qty: float = 1
     qty_step: float = 1
     currency: str = "USD"
+    asset_class: str = "future"          # "future" (sized in contracts) | "etf" (sized in shares)
+    friction_per_side: float = 0.0       # modelled bid/ask friction, $ per unit (contract/share) per fill
+    max_notional_leverage: float = 0.0   # position notional <= equity x this (0 = no cap)
 
     def __post_init__(self) -> None:
+        if self.asset_class not in ASSET_CLASSES:
+            raise ValueError(f"{self.symbol}: asset_class must be one of {ASSET_CLASSES}")
+        if min(self.commission_per_side, self.exchange_fee_per_side, self.friction_per_side, self.slippage_ticks) < 0:
+            raise ValueError(f"{self.symbol}: costs must be >= 0")
+        if self.max_notional_leverage < 0:
+            raise ValueError(f"{self.symbol}: max_notional_leverage must be >= 0")
+        if self.asset_class == "future" and (self.qty_step != int(self.qty_step) or self.min_qty < 1):
+            raise ValueError(f"{self.symbol}: futures trade in whole contracts (min_qty >= 1, integer qty_step)")
         if self.tick_size <= 0 or self.tick_value <= 0 or self.multiplier <= 0:
             raise ValueError(f"{self.symbol}: tick_size, tick_value and multiplier must be positive")
         implied = self.tick_size * self.multiplier
@@ -44,13 +57,30 @@ class Instrument:
             raise ValueError(f"{self.symbol}: min_qty and qty_step must be positive")
 
     @property
+    def unit(self) -> str:
+        """Unit of quantity: 'contract' for futures, 'share' for ETFs. Never interchangeable."""
+        return UNITS[self.asset_class]
+
+    @property
+    def fixed_cost_per_side(self) -> float:
+        """$ per unit per fill: commission + exchange/regulatory fees + modelled friction."""
+        return self.commission_per_side + self.exchange_fee_per_side + self.friction_per_side
+
+    @property
     def point_value(self) -> float:
         return self.multiplier
 
     @property
     def round_trip_fixed_cost(self) -> float:
-        """Commission + exchange fees for one contract, both sides."""
-        return 2.0 * (self.commission_per_side + self.exchange_fee_per_side)
+        """Commission + exchange fees + friction for one unit (contract or share), both sides, excluding slippage."""
+        return 2.0 * self.fixed_cost_per_side
+
+    def cost_description(self) -> str:
+        """Human-readable cost schedule with explicit units."""
+        u = self.unit
+        return (f"commission ${self.commission_per_side:g}/{u}/side · exchange+regulatory fees ${self.exchange_fee_per_side:g}/{u}/side · "
+                f"modelled friction ${self.friction_per_side:g}/{u}/side · slippage {self.slippage_ticks:g} tick(s)/side on market & stop fills "
+                f"(1 tick = {self.tick_size:g} price = ${self.tick_value:g}/{u})")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

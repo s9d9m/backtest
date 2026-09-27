@@ -25,6 +25,7 @@ Two OOS variants are always reported. Both use only pre-OOS information:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -37,7 +38,7 @@ from ..engine.backtest import run_backtest
 from ..engine.execution import resolve_costs
 from ..engine.metrics import compute_metrics
 from ..engine.params import ExecutionParams, SizingParams, StrategyParams
-from ..engine.portfolio import apply_sizing, daily_equity
+from ..engine.portfolio import SIZED_COLUMNS, apply_sizing, daily_equity
 from ..engine.session_data import PreparedData
 from .parameter_space import config_frame_row
 from .robustness import classify_plateau, neighbour_stats
@@ -51,8 +52,11 @@ class WFOStructure:
     val_months: int
     oos_months: int
     roll_months: int
+    unit: str = "months"  # "months" (calendar months) or "sessions" (blocks of trading sessions)
 
     def validate(self) -> None:
+        if self.unit not in ("months", "sessions"):
+            raise ValueError("unit must be 'months' or 'sessions'")
         if min(self.train_months, self.val_months, self.oos_months, self.roll_months) <= 0:
             raise ValueError("all WFO lengths must be positive")
         if self.roll_months != self.oos_months:
@@ -227,10 +231,16 @@ def run_wfo(
     slippage_grid: tuple[float, ...] = (0.5, 1.0, 1.5, 2.0, 3.0),
     starting_equity: float = 100_000.0,
     run_dir: Path | None = None,
+    min_first: int = 0,
+    progress=None,
+    risk_pct: float = 0.01,
 ) -> WFOResult:
+    """``min_first``: first period index windows may use (e.g. 1 to skip a session cube's ``pre`` group).
+    ``progress(done, total)`` is called after each window; it may raise to stop the run."""
     sel = selection or SelectionConfig()
     eligible = np.ones(cube.n_configs, dtype=bool) if eligible is None else eligible
-    first, last = usable_month_range(cube.sessions_per_month)
+    first, last = usable_month_range(cube.sessions_per_month[min_first:])
+    first, last = first + min_first, last + min_first
     windows = generate_windows(cube.months, structure, first, last)
     if not windows:
         raise ValueError(f"not enough history for {structure.name}: {last - first} usable months")
@@ -242,12 +252,17 @@ def run_wfo(
         pick = select_window(view, w, nbrs, eligible, sel)
         if len(pick["finalists"]):
             finalist_frames.append(pick["finalists"].assign(window=w.idx, config_key=[cube.configs[i].key() for i in pick["finalists"]["config_index"]]))
+        if progress:
+            progress(w.idx, len(windows))
         o0, o1 = w.oos
-        start, _ = _month_dates(cube.months[o0])
-        _, end = _month_dates(cube.months[o1 - 1])
+        start, _ = cube.period_dates(o0)
+        _, end = cube.period_dates(o1 - 1)
         d_lo, d_hi = prep.day_range(start, end)
         oos_dates.append(prep.dates[d_lo:d_hi])
-        row = {"window": w.idx, **{f"{k}_months": v for k, v in w.labels.items()}, "oos_start": str(start.date()), "oos_end": str(end.date()),
+        row = {"window": w.idx, **{f"{k}_months": v for k, v in w.labels.items()},
+               "train_start": str(cube.period_dates(w.train[0])[0].date()), "train_end": str(cube.period_dates(w.train[1] - 1)[1].date()),
+               "val_start": str(cube.period_dates(w.val[0])[0].date()), "val_end": str(cube.period_dates(w.val[1] - 1)[1].date()),
+               "oos_start": str(start.date()), "oos_end": str(end.date()),
                "oos_sessions": int(d_hi - d_lo), "selected": pick["selected"], "reason": pick["reason"]}
         if pick["selected"] < 0:
             selected_params.append(None)
@@ -255,6 +270,8 @@ def run_wfo(
             continue
         params = cube.configs[pick["selected"]]
         selected_params.append(params)
+        # frozen BEFORE the OOS segment is simulated; the hash lets anyone verify the OOS used exactly these parameters
+        row["frozen_sha256"] = hashlib.sha256(json.dumps(params.to_dict(), sort_keys=True, default=str).encode()).hexdigest()
         res = run_backtest(prep, params, execution, fixed, start=start, end=end)
         trades = res.trades.assign(window=w.idx, stand_aside=pick["stand_aside"])
         trade_frames.append(trades)
@@ -287,7 +304,7 @@ def run_wfo(
     stitched = _stitch(trades, all_dates, starting_equity)
     stand = trades[~trades["stand_aside"]] if len(trades) else trades
     stitched_sa = _stitch(stand, all_dates, starting_equity)
-    pct = _stitch(trades, all_dates, starting_equity, SizingParams(mode="pct_equity", risk_pct=0.01, starting_equity=starting_equity), prep)
+    pct = _stitch(trades, all_dates, starting_equity, SizingParams(mode="pct_equity", risk_pct=risk_pct, starting_equity=starting_equity, max_contracts=1e9), prep)
     sens = _slippage_sensitivity(prep, windows, selected_params, cube, execution, fixed, all_dates, starting_equity, slippage_grid)
     summary = _summarise(structure, sel, table, stitched["metrics"], stitched_sa["metrics"], sens, family_label, execution, prep)
     finalists = pd.concat(finalist_frames, ignore_index=True) if finalist_frames else pd.DataFrame()
@@ -300,7 +317,7 @@ def run_wfo(
 
 def _stitch(trades: pd.DataFrame, dates: np.ndarray, equity: float, sizing: SizingParams | None = None, prep: PreparedData | None = None) -> dict:
     if len(trades) and sizing is not None and prep is not None:
-        cols = [c for c in trades.columns if c not in ("qty", "sized_out", "gross_pnl", "slippage_cost", "commission", "net_pnl", "risk_dollars", "equity_before", "equity_after")]
+        cols = [c for c in trades.columns if c not in (*SIZED_COLUMNS, "sized_out", "size_capped")]
         costs = resolve_costs(prep.instrument, ExecutionParams())
         trades = apply_sizing(trades[cols].sort_values("entry_time").reset_index(drop=True), sizing, prep.instrument, costs)
     daily = daily_equity(trades, dates, equity)
@@ -316,8 +333,8 @@ def _slippage_sensitivity(prep, windows, selected_params, cube, execution, fixed
         for w, params in zip(windows, selected_params):
             if params is None:
                 continue
-            start, _ = _month_dates(cube.months[w.oos[0]])
-            _, end = _month_dates(cube.months[w.oos[1] - 1])
+            start, _ = cube.period_dates(w.oos[0])
+            _, end = cube.period_dates(w.oos[1] - 1)
             frames.append(run_backtest(prep, params, ex, fixed, start=start, end=end).trades)
         trades = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         m = _stitch(trades, dates, equity)["metrics"]
@@ -394,15 +411,15 @@ def save_wfo(result: WFOResult, run_dir: Path) -> None:
         k: result.stitched_metrics_pct_equity.get(k) for k in ("n_trades", "net_pnl", "cagr", "sharpe", "max_dd")}}, indent=2, default=str))
 
 
-def phase_metrics(cube: StatsCube, structure: WFOStructure) -> pd.DataFrame:
+def phase_metrics(cube: StatsCube, structure: WFOStructure, min_first: int = 0) -> pd.DataFrame:
     """Per-configuration descriptive metrics by phase, for heatmaps (NOT used for selection).
 
     * train: mean over windows of the per-window training expectancy / Sharpe (training windows overlap)
     * val: pooled over all validation months
     * oos: pooled over all OOS months, i.e. each configuration held fixed through the OOS periods
     """
-    first, last = usable_month_range(cube.sessions_per_month)
-    windows = generate_windows(cube.months, structure, first, last)
+    first, last = usable_month_range(cube.sessions_per_month[min_first:])
+    windows = generate_windows(cube.months, structure, first + min_first, last + min_first)
     tr_exp = np.zeros(cube.n_configs)
     tr_sharpe = np.zeros(cube.n_configs)
     for w in windows:

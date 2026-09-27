@@ -121,3 +121,23 @@ def neighbour_table(configs: list[StrategyParams], nbrs: np.ndarray, i: int, met
                      "stop": stop_label(c.stop_method, c.stop_param), "R": c.target_r, "cutoff": c.cutoff,
                      "direction": c.direction, **metrics.iloc[j].to_dict()})
     return pd.DataFrame(rows)
+
+
+def grid_stability(results: pd.DataFrame, configs: list[StrategyParams], score_col: str = "avg_r") -> pd.DataFrame:
+    """Neighbourhood stability of every grid-search row: neighbour median/min of ``score_col`` and a class.
+
+    Returns a frame indexed like ``results`` with ``nbr_median``, ``nbr_min``, ``n_neighbours`` and ``stability``.
+    """
+    keys = [c.key() for c in configs]
+    pos = {k: i for i, k in enumerate(keys)}
+    values = np.full(len(configs), np.nan)
+    for k, v in zip(results["config_key"], results[score_col]):
+        if k in pos:
+            values[pos[k]] = v
+    nbrs = neighbour_index(configs)
+    med, mn, cnt = neighbour_stats(values, nbrs)
+    cls = classify_plateau(values, med, mn)
+    idx = [pos.get(k, -1) for k in results["config_key"]]
+    pick = lambda arr: [arr[i] if i >= 0 else np.nan for i in idx]  # noqa: E731
+    return pd.DataFrame({"nbr_median": pick(med), "nbr_min": pick(mn), "n_neighbours": pick(cnt), "stability": pick(cls)},
+                        index=results.index)

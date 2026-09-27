@@ -148,8 +148,23 @@ def compute_metrics(trades: pd.DataFrame, daily: pd.DataFrame, starting_equity: 
         r = hold = years_of_trade = np.zeros(0)
     out.update(trade_stats(pnl, r, hold, out["years"]))
     out.update(concentration_stats(pnl, years_of_trade))
-    out["commission_paid"] = float(executed["commission"].sum()) if len(executed) else 0.0
-    out["slippage_cost"] = float(executed["slippage_cost"].sum()) if len(executed) else 0.0
+    def total(col: str) -> float:
+        return float(executed[col].sum()) if len(executed) and col in executed else 0.0
+
+    out["commission_paid"] = total("commission")
+    out["fees_paid"] = total("fees")
+    out["friction_paid"] = total("friction")
+    out["slippage_cost"] = total("slippage_cost")
+    out["total_cost"] = total("total_cost") if len(executed) and "total_cost" in executed else out["commission_paid"] + out["slippage_cost"]
+    out["cost_per_trade"] = out["total_cost"] / len(executed) if len(executed) else 0.0
+    out["n_long"] = int((executed["direction"] == "long").sum()) if len(executed) else 0
+    out["n_short"] = int((executed["direction"] == "short").sum()) if len(executed) else 0
+    for side in ("long", "short"):
+        sub = executed[executed["direction"] == side] if len(executed) else executed
+        out[f"pnl_{side}"] = float(sub[pnl_col].sum()) if len(sub) else 0.0
+        out[f"expectancy_r_{side}"] = float(sub["r_multiple"].mean()) if len(sub) and "r_multiple" in sub else 0.0
+    out["ambiguous_exit_pct"] = float(executed["ambiguous_exit"].mean()) if len(executed) and "ambiguous_exit" in executed else 0.0
+    out["cum_r"] = float(r.sum()) if len(r) else 0.0
     out["gross_pnl"] = float(executed["gross_pnl"].sum()) if len(executed) else 0.0
     out["n_sized_out"] = int(trades["sized_out"].sum()) if len(trades) and "sized_out" in trades else 0
     return out

@@ -36,7 +36,11 @@ from ..optimization.heatmaps import AGGREGATIONS, STANDARD_PAIRS, heatmap_table,
 from ..optimization.objectives import ALTERNATIVE_OBJECTIVES, ObjectiveConfig
 from ..optimization.parameter_space import CONFIRMATION_PRESETS, ParameterSpace, load_search_spaces
 from ..reports import plots
+from ..optimization.parameter_space import params_from_row
+from ..optimization.robustness import grid_stability
+from ..optimization.stress import stress_test
 from ..reports.experiment import metrics_table, save_backtest
+from . import common
 
 TIMES_ORB = ["09:00", "09:15", "09:30", "09:45", "10:00"]
 RANGES = [5, 10, 15, 20, 30, 45, 60]
@@ -100,10 +104,9 @@ def sidebar():
         symbol = st.sidebar.selectbox("Market", list(instruments), key="symbol",
                                       format_func=lambda k: f"{k} (ETF proxy)" if k in etfs else k)
         inst = instruments[symbol]
-    unit = "share" if symbol in etfs else "contract"
     # "\\$" keeps Streamlit from reading text between two dollar signs as a LaTeX formula
-    st.sidebar.caption(f"{inst.name} · tick {inst.tick_size} = \\${inst.tick_value} per {unit} · cost "
-                       f"\\${inst.commission_per_side + inst.exchange_fee_per_side:g}/side + {inst.slippage_ticks:g} tick(s) slippage")
+    st.sidebar.caption(f"{inst.name} ({'ETF, sized in shares' if inst.asset_class == 'etf' else 'futures, sized in contracts'}) · "
+                       + inst.cost_description().replace("$", "\\$"))
     tz, convention = None, "start"
     if source in ("File path", "Upload"):
         tz = st.sidebar.selectbox("Timezone of naive timestamps", ["(timestamps carry offset)", "America/New_York", "America/Chicago", "UTC"])
@@ -160,10 +163,14 @@ def sidebar():
                 ds.prep, lock = apply_lockbox(inst.symbol, ds.prep)
                 if lock and lock.get("lockbox_start"):
                     st.sidebar.info(f"Lockbox: sessions from {lock['lockbox_start']} are withheld")
+                ds.prep_full = ds.prep
                 _state()["dataset"] = ds
                 _state()["instrument"] = inst
-                for k in ("result", "grid"):
+                for k in ("result", "grid", "candidates", "split", "robustness", "mc", "stress", "blind", "active_candidate"):
                     _state().pop(k, None)
+                from .pipeline_tab import restore_split
+
+                restore_split(ds)
                 st.sidebar.success(f"{ds.prep.n_days:,} tradable sessions")
             except DataQualityError as exc:
                 _state()["dq_block"] = exc.report
@@ -258,94 +265,95 @@ def _param_form(defaults: StrategyParams, prefix: str = "bt", base_minutes: int 
 
 
 def _execution_form(inst, prefix="bt") -> ExecutionParams:
-    c = st.columns(5)
-    slip = c[0].number_input("Slippage (ticks/side)", 0.0, 10.0, float(inst.slippage_ticks), 0.5, key=f"{prefix}_slip")
-    comm = c[1].number_input("Commission/side ($)", 0.0, 50.0, float(inst.commission_per_side), 0.05, key=f"{prefix}_comm")
-    fee = c[2].number_input("Exchange fee/side ($)", 0.0, 50.0, float(inst.exchange_fee_per_side), 0.05, key=f"{prefix}_fee")
-    fill = c[3].selectbox("Limit fill model", FILL_MODELS, index=1, key=f"{prefix}_fill")
-    amb = c[4].selectbox("Same-bar ambiguity", AMBIGUITY_MODES, index=2, key=f"{prefix}_amb")
-    return ExecutionParams(slippage_ticks=slip, commission_per_side=comm, exchange_fee_per_side=fee, fill_model=fill, ambiguity=amb)
+    return common.execution_form(inst, prefix)
 
 
-def _date_range(ds, prefix):
+def _date_range(ds, prefix, default_end=None):
     first, last = pd.Timestamp(ds.prep.dates[0]), pd.Timestamp(ds.prep.dates[-1])
+    end_default = min(pd.Timestamp(default_end), last) if default_end else last
     c = st.columns(2)
     start = c[0].date_input("From", first, min_value=first, max_value=last, key=f"{prefix}_from")
-    end = c[1].date_input("To", last, min_value=first, max_value=last, key=f"{prefix}_to")
+    end = c[1].date_input("To", end_default, min_value=first, max_value=last, key=f"{prefix}_to")
     return start, end
 
 
 def tab_backtest():
     ds = _state().get("dataset")
     if ds is None:
-        st.info("Load data first.")
+        st.info("Load data first (left sidebar → Load data).")
         return
     inst = _state()["instrument"]
     cfg = load_strategy_config()
+    common.dev_notice()
     with st.form("backtest_form"):
         st.subheader("Strategy")
         params = _param_form(cfg["strategy"], base_minutes=ds.prep.base_minutes)
         st.subheader("Execution & costs")
         execution = _execution_form(inst)
-        st.subheader("Position sizing & period")
-        c = st.columns(4)
-        mode = c[0].selectbox("Sizing", SIZING_MODES)
-        is_etf = inst.symbol in _etf_instruments()
-        contracts = c[1].number_input("Shares (fixed)" if is_etf else "Contracts (fixed)", 1, 100000, 100 if is_etf else 1)
-        risk_pct = c[2].number_input("Risk % of equity", 0.1, 10.0, 1.0, 0.1) / 100
-        equity = c[3].number_input("Starting equity ($)", 1000.0, 1e9, 100_000.0, 1000.0)
+        st.subheader("Position sizing")
+        sizing = common.sizing_form(inst, "bt")
         start, end = _date_range(ds, "bt")
         submitted = st.form_submit_button("RUN BACKTEST", type="primary")
     if submitted:
-        sizing = SizingParams(mode=mode, contracts=contracts, risk_dollars=equity * risk_pct, risk_pct=risk_pct, starting_equity=equity)
         try:
             params.validate(ds.prep.base_minutes)
+            sizing.validate()
         except ValueError as exc:
             st.error(str(exc))
             return
         with st.spinner("Running..."):
             res = run_backtest(ds.prep, params, execution, sizing, start, end)
             bench = run_backtest(ds.prep, params, replace(execution, frictionless=True), sizing, start, end)
-            fixed = run_backtest(ds.prep, params, execution, SizingParams(mode="fixed_contracts", contracts=1, starting_equity=equity), start, end)
+            fixed = run_backtest(ds.prep, params, execution, SizingParams(mode="fixed_contracts", contracts=1,
+                                                                          starting_equity=sizing.starting_equity), start, end)
         _state()["result"] = res
         _state()["benchmark"] = bench
         _state()["fixed_result"] = fixed
         _state()["backtest_period"] = (start, end)
+        _state().pop("stress", None)
     res = _state().get("result")
     if res is None:
         return
     bench = _state()["benchmark"]
     m = res.metrics
+    u = res.diagnostics.get("unit", "contract")
     st.divider()
     st.caption("All figures are historical backtest results for ONE parameter set chosen by you. They are not evidence of a "
-               "persistent edge; use walk-forward results for that.")
+               "persistent edge; out-of-sample tests (PIPELINE blind holdout, WALK-FORWARD) are.")
     c = st.columns(6)
-    c[0].metric("Net P&L", f"${m['net_pnl']:,.0f}")
-    c[1].metric("Trades", f"{m['n_trades']:,}")
-    c[2].metric("Expectancy (R)", f"{m['avg_r']:.3f}", help=f"t-stat {m['t_stat_r']:.2f}")
-    c[3].metric("Profit factor", f"{m['profit_factor']:.2f}")
-    c[4].metric("Sharpe", f"{m['sharpe']:.2f}")
-    c[5].metric("Max DD", f"{m['max_dd']:.1%}")
+    c[0].metric("Net P&L", f"${m['net_pnl']:,.0f}", help="After commission, fees, friction and slippage.")
+    c[1].metric("Trades", f"{m['n_trades']:,}", help=f"{m['n_long']} long / {m['n_short']} short")
+    c[2].metric("Expectancy (R)", f"{m['avg_r']:+.3f}", help=f"Average net R per trade. t-stat {m['t_stat_r']:.2f}")
+    c[3].metric("Profit factor", f"{m['profit_factor']:.2f}", help="Gross profit / gross loss, after costs")
+    c[4].metric("Max drawdown", f"{m['max_dd']:.1%}")
+    c[5].metric("Cost per trade", f"${m['cost_per_trade']:,.2f}", help=f"Total costs ${m['total_cost']:,.2f}")
+    common.metrics_explained(m)
     d = res.diagnostics
     if d["ambiguous_exit_pct"] > 0:
         st.warning(f"{d['ambiguous_exits']} trades ({d['ambiguous_exit_pct']:.1%}) exited on bars where stop and target were both "
                    f"inside the bar; resolved with the '{res.execution.ambiguity}' assumption.")
     if d["sized_out_trades"]:
-        st.warning(f"{d['sized_out_trades']} signals were skipped because the stop was too wide to size even one contract.")
+        st.warning(f"{d['sized_out_trades']} signals were skipped because the stop was too wide to size even one {u} "
+                   "with the chosen risk budget.")
+    if d.get("size_capped_trades"):
+        st.info(f"{d['size_capped_trades']} trades were reduced by the notional (buying-power) cap.")
     table = metrics_table(res.metrics, res.metrics_gross)
     table["Frictionless benchmark (comparison only)"] = metrics_table(bench.metrics)["Net"]
     table["Long only"] = metrics_table(res.metrics_long)["Net"]
     table["Short only"] = metrics_table(res.metrics_short)["Net"]
     fixed = _state().get("fixed_result")
     if fixed is not None and res.sizing.mode != "fixed_contracts":
-        table["Fixed 1 contract"] = metrics_table(fixed.metrics)["Net"]
+        table[f"Fixed 1 {u}"] = metrics_table(fixed.metrics)["Net"]
     left, right = st.columns([3, 2])
     with left:
         st.plotly_chart(plots.equity_and_drawdown(res.daily, bench.daily), width="stretch")
     with right:
         st.dataframe(table, width="stretch", hide_index=True, height=520)
+    common.send_to_buttons(f"backtest {res.params.key()}", res.params, "BACKTEST (hand-picked)", key="bt_to_cand")
     trades = res.trades
     if len(trades):
+        with st.expander("Equity & risk view: equity, drawdown, cumulative R, trade-by-trade P&L, position size", expanded=False):
+            st.plotly_chart(common.equity_risk_figure(res), width="stretch")
         c1, c2 = st.columns(2)
         c1.plotly_chart(plots.r_distribution(trades), width="stretch")
         c2.plotly_chart(plots.pnl_histogram(trades), width="stretch")
@@ -360,36 +368,54 @@ def tab_backtest():
         c3.plotly_chart(plots.breakdown_bar(trades.assign(entry_hour=trades["entry_time"].dt.strftime("%H:00")), "entry_hour",
                                             "Net P&L by entry hour"), width="stretch")
         st.plotly_chart(plots.rolling_metrics(res.daily, trades), width="stretch")
-    st.subheader("Transaction-cost sensitivity")
-    if st.button("Run slippage sensitivity (0-3 ticks)"):
+    st.subheader("Execution stress test")
+    st.caption("Re-runs this configuration with worse execution: more slippage, higher costs, pessimistic same-bar handling and "
+               "adverse entry prices. A configuration that only works with perfect execution is flagged FRAGILE.")
+    if st.button("Run execution stress test"):
         start, end = _state()["backtest_period"]
-        rows = []
-        for slip in SLIPPAGE_GRID:
-            r = run_backtest(ds.prep, res.params, replace(res.execution, slippage_ticks=slip), res.sizing, start, end).metrics
-            rows.append({"slippage ticks/side": slip, "trades": r["n_trades"], "net P&L": r["net_pnl"], "expectancy R": r["avg_r"],
-                         "profit factor": r["profit_factor"], "Sharpe": r["sharpe"], "max DD": r["max_dd"]})
-        sens = pd.DataFrame(rows)
-        st.dataframe(sens, width="stretch", hide_index=True)
-        breakeven = sens[sens["net P&L"] <= 0]["slippage ticks/side"].min()
-        if pd.notna(breakeven):
-            st.warning(f"Net P&L is not positive from {breakeven} tick(s) of slippage per side.")
+        with st.spinner("Stress testing..."):
+            _state()["stress"] = stress_test(ds.prep, res.params, res.execution, SizingParams(mode="fixed_contracts", contracts=1,
+                                                                                             starting_equity=res.sizing.starting_equity), start, end)
+            _state()["stress_key"] = res.params.key()
+    if _state().get("stress"):
+        show_stress(*_state()["stress"])
     if st.button("Save experiment (manifest + trades + metrics)"):
         path = save_backtest(res, ds, inst)
         st.success(f"Saved to {path}")
 
 
+def show_stress(table: pd.DataFrame, info: dict) -> None:
+    verdict = info["verdict"]
+    msg = {"ROBUST": "ROBUST: expectancy stays positive under every moderate stress.",
+           "FRAGILE": "FRAGILE: expectancy turns non-positive under " + ", ".join(info["breaks_under"]) + ".",
+           "NOT POSITIVE": "NOT POSITIVE: expectancy is not positive even with your baseline assumptions.",
+           "NO TRADES": "No trades in this period."}[verdict]
+    (st.success if verdict == "ROBUST" else st.error)(msg)
+    st.dataframe(table.style.format({"expectancy_r": "{:+.3f}", "net_pnl": "{:,.2f}", "profit_factor": "{:.2f}", "win_rate": "{:.0%}",
+                                     "cost_per_trade": "{:,.2f}"}), hide_index=True, width="stretch")
+    st.caption(f"1 {info['unit']} per trade. 'Adverse entry' is an approximation (entry worse by k ticks, same exits), standing in for a "
+               "delayed fill; every other row is a full re-simulation.")
+
+
 # ------------------------------------------------------------------------------------------ OPTIMIZATION
+LARGE_SEARCH = 5_000
+
+
 def tab_optimization():
     ds = _state().get("dataset")
     if ds is None:
-        st.info("Load data first.")
+        st.info("Load data first (left sidebar → Load data).")
         return
     inst = _state()["instrument"]
     cfg = load_strategy_config()
     spaces = load_search_spaces(base=cfg["strategy"])
-    st.caption("Grid search is IN-SAMPLE. The top row is the 'highest historical result', not an optimal strategy. "
-               "Look for broad regions that work, then confirm them with walk-forward testing.")
-    preset = st.selectbox("Parameter space", ["custom"] + list(spaces), index=1 + list(spaces).index("primary_930_reduced"))
+    common.dev_notice()
+    st.info("**Optimization is IN-SAMPLE.** The top row is the *highest historical result* on this data, not the best strategy: "
+            "with enough configurations, something always looks good by chance. Prefer broad regions where neighbouring settings "
+            "also work, then test the choice out of sample (PIPELINE blind holdout, WALK-FORWARD).")
+    reduced = [k for k in spaces if "reduced" in k or k == "smoke"]
+    preset = st.selectbox("Parameter space", ["custom"] + list(spaces), index=1 + list(spaces).index("primary_930_reduced"),
+                          format_func=lambda k: k if k == "custom" else f"{k} ({'reduced' if k in reduced else 'comprehensive'})")
     if preset != "custom":
         st.caption(spaces[preset].description)
         grid = dict(spaces[preset].grid)
@@ -417,19 +443,31 @@ def tab_optimization():
             g["max_trades"] = ms("Max trades/day", "mt", [1, 2, 0], grid.get("max_trades", [1]))
     space = ParameterSpace(preset, {k: v for k, v in g.items() if v}, base=cfg["strategy"])
     expanded = space.expand(ds.prep.base_minutes)
+    n_eval = len(expanded.configs)
     c = st.columns(4)
     c[0].metric("Raw combinations", f"{expanded.n_raw:,}")
     c[1].metric("Invalid", f"{expanded.n_invalid:,}")
     c[2].metric("Duplicates removed", f"{expanded.n_duplicates:,}")
-    c[3].metric("To evaluate", f"{len(expanded.configs):,}")
+    c[3].metric("Configurations to search", f"{n_eval:,}")
+    split = _state().get("split")
     with st.form("grid_form"):
         execution = _execution_form(inst, "opt")
         c = st.columns(3)
         workers = c[0].number_input("Worker processes", 1, os.cpu_count() or 1, max(1, (os.cpu_count() or 2) - 1))
         chunk = c[1].number_input("Checkpoint chunk size", 10, 5000, 200)
         resume_dir = c[2].text_input("Resume run directory (optional)", "")
-        start, end = _date_range(ds, "opt")
+        if split:
+            st.caption(f"Default period = TRAIN only ({split['train_start']}..{split['train_end']}), so the validation period stays "
+                       "unseen for the VALIDATE step in PIPELINE.")
+        start, end = _date_range(ds, "opt", split["train_end"] if split else None)
+        confirm = True
+        if n_eval > LARGE_SEARCH:
+            confirm = st.checkbox(f"I understand this is a comprehensive search of {n_eval:,} configurations: it can take a long time and "
+                                  "the best row will be even more inflated by luck.", value=False)
         go_ = st.form_submit_button("RUN OPTIMIZATION", type="primary")
+    if go_ and not confirm:
+        st.error("Tick the confirmation box to run a comprehensive search, or pick a reduced preset.")
+        go_ = False
     if go_:
         bar = st.progress(0.0, text="starting...")
 
@@ -443,26 +481,54 @@ def tab_optimization():
                               run_dir=resume_dir or None, progress=progress, objective=ObjectiveConfig.from_dict(cfg["objective"]),
                               data_description=ds.describe())
         _state()["grid"] = result
+        _state().pop("grid_stability", None)
+        _state()["grid_period"] = (str(start), str(end))
+        _state()["grid_execution"] = execution
     result = _state().get("grid")
     if result is None or result.results.empty:
         return
     res = result.results
     b = result.selection_bias
     st.subheader("Multiple-testing context")
-    msg = (f"{b['n_configs']:,} configurations tested (effective independent trials ≈ {b['n_effective']:,.0f}). "
-           f"Best Sharpe {b['best_sharpe']:.2f}; selecting the best of this many *no-edge* configurations would be expected to "
-           f"produce ≈ {b['expected_max_sharpe_under_null']:.2f}. {b['share_positive_sharpe']:.0%} of configurations have positive Sharpe.")
-    (st.success if b["best_exceeds_null_max"] else st.warning)(msg)
+    c = st.columns(4)
+    c[0].metric("Configurations searched", f"{b['n_configs']:,}")
+    c[1].metric("Effective independent trials", f"≈ {b['n_effective']:,.0f}",
+                help="Many configurations are near-copies of each other; this estimates how many independent bets were really made.")
+    c[2].metric("Best in-sample Sharpe", f"{b['best_sharpe']:.2f}")
+    c[3].metric("Expected best Sharpe if NO edge", f"{b['expected_max_sharpe_under_null']:.2f}",
+                help="The best of this many random, edgeless strategies would be expected to show about this Sharpe purely by luck.")
+    msg = (f"{b['share_positive_sharpe']:.0%} of configurations have positive Sharpe. "
+           + ("The best result exceeds what luck alone would produce, but that is still in-sample." if b["best_exceeds_null_max"] else
+              "The best result does NOT exceed what the best of this many no-edge configurations would show by luck."))
+    (st.info if b["best_exceeds_null_max"] else st.warning)(msg)
     objective = st.selectbox("Rank by", list(ALTERNATIVE_OBJECTIVES), index=list(ALTERNATIVE_OBJECTIVES).index("composite"),
                              format_func=lambda k: ALTERNATIVE_OBJECTIVES[k])
-    ranked = res.sort_values(f"rank_{objective}")
+    stab = _state().get("grid_stability")
+    if stab is None or len(stab) != len(res):
+        stab = grid_stability(res, result.expanded.configs, "avg_r")
+        _state()["grid_stability"] = stab
+    ranked = res.join(stab).sort_values(f"rank_{objective}")
     table = results_table(ranked).assign(Rank=ranked[f"rank_{objective}"].to_numpy())
+    table.insert(1, "Stability", ranked["stability"].to_numpy())
+    table.insert(2, "Neighbour median R", ranked["nbr_median"].round(3).to_numpy())
+    st.caption("**Stability**: plateau = neighbouring settings (one step away in one parameter) keep most of the result; spike = they "
+               "collapse (likely luck); isolated = no neighbours searched. Trades and Top-5 Share show sample size and outlier dependence.")
     st.dataframe(table, width="stretch", hide_index=True, height=420)
     st.download_button("Export results CSV", res.to_csv(index=False).encode(), file_name=f"{result.experiment_id}_results.csv")
     agree = pd.DataFrame({k: res.nsmallest(10, f"rank_{k}")["config_key"].tolist() for k in ALTERNATIVE_OBJECTIVES})
     overlap = {k: len(set(agree[k]) & set(agree["composite"])) for k in ALTERNATIVE_OBJECTIVES}
     st.caption("Overlap of each objective's top-10 with the composite top-10 (low overlap = conclusions depend on the objective): "
                + ", ".join(f"{k}: {v}/10" for k, v in overlap.items()))
+
+    st.subheader("Send a configuration to the next stages")
+    top = ranked.head(50)
+    pick = st.selectbox("Configuration", top.index.tolist(), key="opt_pick",
+                        format_func=lambda i: f"#{int(top.loc[i, f'rank_{objective}'])} · {top.loc[i, 'stability']} · "
+                                              f"{common.describe_params(params_from_row(top.loc[i].to_dict()))} · "
+                                              f"{int(top.loc[i, 'n_trades'])} trades · {top.loc[i, 'avg_r']:+.3f} R")
+    chosen = params_from_row(top.loc[pick].to_dict())
+    common.send_to_buttons(f"optimizer #{int(top.loc[pick, f'rank_{objective}'])} {chosen.key()}", chosen,
+                           f"OPTIMIZATION rank {int(top.loc[pick, f'rank_{objective}'])} ({objective}, in-sample)", key="opt_to_cand")
 
     st.subheader("Parameter heatmaps")
     varying = varying_parameters(res)
@@ -491,11 +557,7 @@ def tab_optimization():
                         width="stretch")
 
 
-# ------------------------------------------------------------------------------------------ later milestones
-def tab_pending(name: str, milestone: int, body: str):
-    st.info(f"{name} is scheduled for Milestone {milestone} and is not implemented yet. {body}")
-
-
+# ------------------------------------------------------------------------------------------ other tabs
 def tab_trade_log():
     res = _state().get("result")
     if res is None or res.trades.empty:
@@ -509,74 +571,52 @@ def tab_trade_log():
     view = trades[trades["direction"].isin(side) & trades["exit_reason"].isin(reasons)]
     if amb:
         view = view[view["ambiguous_exit"]]
-    cols = ["trade_id", "session_date", "weekday", "direction", "signal_time", "entry_time", "entry_price", "stop_price", "target_price",
-            "exit_time", "exit_price", "exit_reason", "qty", "risk_ticks", "gross_pnl", "slippage_cost", "commission", "net_pnl",
-            "r_multiple", "mfe_r", "mae_r", "holding_minutes", "or_high", "or_low", "or_width", "atr_daily", "or_atr", "ambiguous_exit",
-            "intrabar_entry", "breakeven_moved", "sized_out", "equity_after"]
-    st.dataframe(view[[c for c in cols if c in view.columns]], width="stretch", hide_index=True, height=600)
+    u = res.diagnostics.get("unit", "contract")
+    st.caption(f"qty = {u}s. risk_per_contract = $ risk per {u} (entry to stop); risk_dollars = qty x that. Costs: commission, fees and "
+               f"friction are $ totals for the trade (per-{u}-per-side rate x 2 fills x qty); slippage_cost is the $ value of slipped ticks.")
+    st.dataframe(common.trades_frame(view), width="stretch", hide_index=True, height=600)
     st.download_button("Export trade log CSV", view.to_csv(index=False).encode(), file_name="trades.csv")
     st.dataframe(res.day_status["status"].value_counts().rename("sessions").to_frame(), width="content")
-
-
-def tab_report():
-    ds = _state().get("dataset")
-    res = _state().get("result")
-    grid = _state().get("grid")
-    if ds is None:
-        st.info("Load data first.")
-        return
-    st.subheader("Data provenance")
-    st.json(ds.describe(), expanded=False)
-    if res is not None:
-        st.subheader("Last backtest (single parameter set; historical)")
-        st.json({"strategy": res.params.to_dict(), "execution": res.execution.to_dict(), "sizing": res.sizing.to_dict(),
-                 "costs": asdict(res.costs), "diagnostics": res.diagnostics}, expanded=False)
-    if grid is not None and not grid.results.empty:
-        r = grid.results
-        st.subheader("Optimization summary (in-sample)")
-        best_hist = r.sort_values("net_pnl", ascending=False).iloc[0]
-        best_comp = r.sort_values("rank_composite").iloc[0]
-        st.markdown(
-            f"- **Highest historical net P&L:** `{best_hist['config_key']}` — {best_hist['range_minutes']}m range, "
-            f"{best_hist['entry_tf']}m entry, {best_hist['stop']}, {best_hist['target_r']}R, cutoff {best_hist['cutoff']}, "
-            f"{best_hist['direction']}: net ${best_hist['net_pnl']:,.0f}, Sharpe {best_hist['sharpe']:.2f}\n"
-            f"- **Best composite in-sample score:** `{best_comp['config_key']}` — Sharpe {best_comp['sharpe']:.2f}, "
-            f"t-stat {best_comp['t_stat_r']:.2f}, trades {int(best_comp['n_trades'])}\n"
-            f"- Share of configurations with positive net P&L: {(r['net_pnl'] > 0).mean():.1%}\n"
-            f"- Run directory: `{grid.run_dir}`"
-        )
-        st.caption("Best walk-forward family, most robust region, best OOS result and lowest-drawdown viable result require "
-                   "Milestones 3-4 and will appear here once implemented.")
 
 
 def main():
     st.set_page_config(page_title="ORB Lab", layout="wide")
     sidebar()
     inst = _state().get("instrument")
-    if inst is not None and inst.symbol in _etf_instruments() and _state().get("dataset") is not None:
+    ds = _state().get("dataset")
+    if inst is not None and common.is_proxy(inst) and ds is not None:
         st.warning(f"**FREE PROXY EXPERIMENT — NOT FUTURES VALIDATION.** Loaded data: {inst.symbol} (ETF proxy, free Yahoo bars).")
-    tabs = st.tabs(["PHASE-0 RESULTS", "DATA", "BACKTEST", "OPTIMIZATION", "WALK-FORWARD", "ROBUSTNESS", "MONTE CARLO", "TRADE LOG", "REPORT"])
-    with tabs[0]:
-        from .phase0_tab import tab_phase0
+    if ds is not None and common.is_synthetic(ds):
+        st.warning("**SYNTHETIC DATA — NOT MARKET EVIDENCE.** Use it to test the software, never to judge the strategy.")
+    names = ["PIPELINE", "PHASE-0 RESULTS", "DATA", "BACKTEST", "OPTIMIZATION", "WALK-FORWARD", "ROBUSTNESS", "MONTE CARLO", "TRADE LOG",
+             "DIAGNOSTICS", "REPORT"]
+    tabs = dict(zip(names, st.tabs(names)))
+    from .diagnostics_tab import tab_diagnostics
+    from .montecarlo_tab import tab_monte_carlo
+    from .phase0_tab import tab_phase0
+    from .pipeline_tab import tab_pipeline, tab_report
+    from .robustness_tab import tab_robustness
+    from .wfo_tab import tab_walk_forward
 
+    with tabs["PIPELINE"]:
+        tab_pipeline()
+    with tabs["PHASE-0 RESULTS"]:
         tab_phase0()
-    tabs = tabs[1:]
-    with tabs[0]:
+    with tabs["DATA"]:
         tab_data()
-    with tabs[1]:
+    with tabs["BACKTEST"]:
         tab_backtest()
-    with tabs[2]:
+    with tabs["OPTIMIZATION"]:
         tab_optimization()
-    with tabs[3]:
-        from .wfo_tab import tab_walk_forward
-
+    with tabs["WALK-FORWARD"]:
         tab_walk_forward()
-    with tabs[4]:
-        tab_pending("Robustness analysis", 4, "It will test neighbouring parameters of every candidate and score parameter plateaus.")
-    with tabs[5]:
-        tab_pending("Monte Carlo and overfitting diagnostics", 5, "It will add trade reshuffling/bootstrap distributions, Deflated "
-                    "Sharpe Ratio and PBO/CSCV. Grid results already report a multiple-testing warning.")
-    with tabs[6]:
+    with tabs["ROBUSTNESS"]:
+        tab_robustness()
+    with tabs["MONTE CARLO"]:
+        tab_monte_carlo()
+    with tabs["TRADE LOG"]:
         tab_trade_log()
-    with tabs[7]:
+    with tabs["DIAGNOSTICS"]:
+        tab_diagnostics()
+    with tabs["REPORT"]:
         tab_report()

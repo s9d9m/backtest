@@ -17,8 +17,9 @@ out-of-sample walk-forward curve (Milestone 3).
 | 1 | Loader, sessions/DST, basic 09:30 ORB, entries, stops, R targets, cutoff, costs, trade log, metrics, UI, tests, synthetic validation | **done** |
 | 2 | Parameter grid search (parallel, checkpointed), heatmaps, objectives, multiple-testing warning | **done** |
 | 3 | Walk-forward optimisation (train / validation / OOS, stitched OOS curve), lockbox, research registry | **done** |
-| 4 | Robustness: neighbour/plateau analysis, parameter-stability scores | planned |
-| 5 | Monte Carlo, Deflated Sharpe, PBO/CSCV | planned |
+| 4 | Robustness: neighbourhood sweeps (plateau vs spike), pair heatmaps, execution stress test | **done** (v0.5.0) |
+| 5 | Monte Carlo (reshuffle, bootstrap, block bootstrap, missed trades, cost stress) | **done** (v0.5.0); Deflated Sharpe, PBO/CSCV planned |
+| — | Browser workflow: WFO launcher with background jobs, blind-holdout pipeline, freeze, final report, diagnostics, risk-based sizing, unit-labelled costs | **done** (v0.5.0) |
 | 6 | Retest, FVG, candle-confirmation entries; trailing stops; regime/percentile filters | planned |
 
 ## Phase 0: free proxy experiment (NOT futures validation)
@@ -51,7 +52,7 @@ python -m orb_lab.cli hypothesis list
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                                  # 126 tests
+pytest                                  # full test suite
 streamlit run app.py                    # dashboard
 
 # command line
@@ -98,6 +99,8 @@ orb_lab/
     registry.py                append-only record of hypotheses, experiments, WFO design
     lockbox.py                 12-month final lockbox: seal, withhold, one-shot unlock
     gates.py                   DQ-before-optimisation and lockbox enforcement
+    pipeline_state.py          dashboard split / blind holdout, frozen candidates (SHA-256), blind-test ledger
+    diagnostics.py             null control, planted edge, lookahead truncation, random direction, cost units
   optimization/
     parameter_space.py         YAML spaces -> canonical, de-duplicated configurations
     grid_search.py             multiprocessing + checkpoint/resume
@@ -107,12 +110,19 @@ orb_lab/
     stats_cube.py              monthly sufficient-statistics cube (every config simulated once)
     walk_forward.py            windows, neighbourhood-robust selection, frozen OOS, stitching
     robustness.py              parameter neighbourhoods, plateau vs spike
-    wfo_runner.py              all structures x entry families, saved + registered
+    wfo_runner.py              all structures x entry families (months or session blocks), saved + registered
+    sweeps.py                  one-at-a-time and pair sweeps around a candidate
+    stress.py                  execution stress test (slippage, costs, fills, adverse entry)
+    monte_carlo.py             trade-sequence resampling, drawdown/streak distributions
   reports/
     plots.py                   Plotly figures
     experiment.py              manifests (IDs, hashes, versions, costs) and exact rerun
     dq_report.py               real-data DQ: month-by-month 09:30 ET alignment, DST, early closes
-  ui/app_main.py               dashboard tabs
+    metric_help.py             plain-language metric explanations and sample-size cautions
+    final_report.py            candidate report across all stages, conservative verdict rules
+  ui/                          dashboard: app_main (data, backtest, optimization, trade log), pipeline_tab (pipeline,
+                               report), wfo_tab, robustness_tab, montecarlo_tab, diagnostics_tab, phase0_tab, common
+  jobs.py                      background jobs (walk-forward from the browser): progress, stop, resume
   cli.py
 tests/                         unit, exact-outcome, DST, look-ahead, statistical, grid, UI
 ```
@@ -137,7 +147,8 @@ All of these are documented in [RESEARCH_NOTES.md](RESEARCH_NOTES.md), with the 
   available under a touch model.
 - **Stop fills** at the stop price plus slippage are optimistic when price gaps. Synthetic tests
   confirmed this, so stop-entry variants need slippage-sensitivity checks.
-- **Costs.** Commission, exchange fees and slippage are always included in headline numbers. The
+- **Costs.** Commission, exchange/regulatory fees, modelled friction (all $ per contract or share, per
+  side) and slippage (ticks per side on market/stop fills) are always included in headline numbers. The
   frictionless run is a comparison only.
 - **Calendar.** XNYS eligibility, early-close handling, and exclusion of intraday contract rolls.
 - **Timestamps.** Naive timestamps are never guessed. The bar-start/bar-end convention is explicit.

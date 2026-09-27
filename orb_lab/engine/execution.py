@@ -71,13 +71,17 @@ DAY_STATUS_NAMES = {
 
 @dataclass(frozen=True)
 class Costs:
+    """Resolved costs. Every $ amount is **per unit (contract or share) per side (fill)**; a round trip
+    pays each twice. Slippage is in ticks per side and only applies to market and stop fills."""
+
     slippage_ticks: float
     commission_per_side: float
     exchange_fee_per_side: float
+    friction_per_side: float = 0.0
 
     @property
     def fixed_per_side(self) -> float:
-        return self.commission_per_side + self.exchange_fee_per_side
+        return self.commission_per_side + self.exchange_fee_per_side + self.friction_per_side
 
     @property
     def round_trip_fixed(self) -> float:
@@ -86,16 +90,13 @@ class Costs:
 
 def resolve_costs(instrument: Instrument, execution: ExecutionParams) -> Costs:
     if execution.frictionless:
-        return Costs(0.0, 0.0, 0.0)
-    return Costs(
-        slippage_ticks=float(instrument.slippage_ticks if execution.slippage_ticks is None else execution.slippage_ticks),
-        commission_per_side=float(
-            instrument.commission_per_side if execution.commission_per_side is None else execution.commission_per_side
-        ),
-        exchange_fee_per_side=float(
-            instrument.exchange_fee_per_side if execution.exchange_fee_per_side is None else execution.exchange_fee_per_side
-        ),
-    )
+        return Costs(0.0, 0.0, 0.0, 0.0)
+
+    def pick(name: str) -> float:
+        value = getattr(execution, name)
+        return float(getattr(instrument, name) if value is None else value)
+
+    return Costs(pick("slippage_ticks"), pick("commission_per_side"), pick("exchange_fee_per_side"), pick("friction_per_side"))
 
 
 @njit(cache=True, inline="always")

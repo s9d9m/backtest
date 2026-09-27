@@ -70,13 +70,14 @@ def load_config(path: Path | None = None) -> dict:
 def etf_instrument(symbol: str, cfg: dict, friction_usd: float) -> Instrument:
     """ETF spec with friction modelled as a per-share cost on EVERY fill (entry and exit, any order type).
 
-    Implemented through the engine's per-contract-per-side cost (1 "contract" = 1 share), so each round
+    Implemented through the engine's ``friction_per_side`` ($ per unit per fill; 1 unit = 1 share), so each round
     trip pays 2 x friction per share whatever the path. Stop/target distances are unaffected. This is
     more conservative for limit fills than the engine's path-slippage model, which only charges
     market/stop fills and moves brackets with the fill (run 1; see the report).
     """
     spec = dict(cfg["etf_spec"])
-    spec["commission_per_side"] = float(friction_usd)
+    spec["friction_per_side"] = float(friction_usd)
+    spec.setdefault("asset_class", "etf")
     return Instrument(symbol=symbol, name=cfg["instruments"].get(symbol, {}).get("name", symbol), slippage_ticks=0.0, **spec)
 
 
@@ -246,7 +247,7 @@ def remove_best(r: np.ndarray, k: int) -> float:
 
 
 def split_result(prep, params, instrument, friction, shares, start, end) -> dict:
-    inst = replace(instrument, commission_per_side=float(friction), slippage_ticks=0.0)
+    inst = replace(instrument, friction_per_side=float(friction), slippage_ticks=0.0)
     prep_f = replace(prep, instrument=inst)
     res = run_backtest(prep_f, params, ExecutionParams(), SizingParams(mode="fixed_contracts", contracts=shares), start=start, end=end)
     t = res.trades
@@ -263,7 +264,7 @@ def split_result(prep, params, instrument, friction, shares, start, end) -> dict
         "profit_factor": m["profit_factor"],
         "net_pnl": m["net_pnl"],
         "gross_pnl": m["gross_pnl"],
-        "friction_cost": m["slippage_cost"] + m["commission_paid"],
+        "friction_cost": m["total_cost"],
         "sharpe_daily": m["sharpe"],
         "max_dd_r": dd_r,
         "max_dd_usd": float((res.daily["net_equity"] - res.daily["net_equity"].cummax()).min()) if len(res.daily) else 0.0,
@@ -443,7 +444,7 @@ def run_free_test(symbol: str, *, n_workers: int = 4, refresh: bool = False, int
     for phase, r in headline_by_split.items():
         t = r["_trades"]
         if len(t):
-            logs.append(t.assign(split=phase, symbol=symbol, estimated_friction=t["slippage_cost"] + t["commission"]))
+            logs.append(t.assign(split=phase, symbol=symbol, estimated_friction=t["total_cost"]))
     trades = pd.concat(logs, ignore_index=True) if logs else pd.DataFrame(columns=TRADE_LOG_COLUMNS)
     trades[[c for c in TRADE_LOG_COLUMNS if c in trades.columns]].to_csv(out / "trade_log_selected.csv", index=False)
 

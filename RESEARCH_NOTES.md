@@ -328,3 +328,58 @@ R exactly when given the actual direction.
 
 **A-46. Descriptive medians exclude configurations with zero trades in that phase.** This was
 corrected after the first report. It never affected selection.
+
+## Pre-data platform finalisation (v0.5.0)
+
+**A-47. Cost categories and units.** Every $ cost is **per unit (contract or share), per side (fill)**:
+commission, exchange/regulatory fees and modelled bid/ask friction (`friction_per_side`). Slippage is in
+ticks per side and only hits market and stop fills (limit fills and targets instead need a one-tick
+trade-through). A round trip pays each $ item twice; all scale with quantity, never per order. The
+trade log shows commission, fees, friction, slippage_cost and total_cost separately. The ETF $0.02/share
+friction moved from the commission field to `friction_per_side`; totals are identical and the committed
+Phase-0 numbers reproduce exactly. A per-order (quantity-independent) commission is not modelled.
+
+**A-48. Contracts vs shares.** `Instrument.asset_class` is `future` (sized in whole contracts) or `etf`
+(sized in shares); the unit is shown in every cost and sizing label. Micro contracts (MES, MNQ, MGC,
+M6E) are configured so small accounts can size risk-based positions on the same price series.
+
+**A-49. Risk-based sizing.** Quantity = floor(risk budget / risk per unit), where risk per unit =
+entry-to-stop distance x $ per point, floored to the instrument's quantity step. Budget = % of current
+equity (compounding) or % of starting equity (fixed $). A trade that cannot be sized to one unit is
+skipped and flagged. An optional notional cap (position value <= equity x leverage; ETFs default to 4x)
+prevents impossible share counts when a stop is very tight; capped trades are flagged.
+
+**A-50. Session-block walk-forward.** For samples too short for monthly windows (the free ~60-day data),
+walk-forward windows can be measured in trading sessions. The cube is built over blocks of
+gcd(train, validation, OOS) sessions; everything else (neighbourhood-robust selection on a view limited
+to train + validation, frozen OOS, stitching) is identical. Monthly presets 12/3/3/3 (primary) and
+24/3/3, 24/6/6, 36/6/6 are unchanged and remain the design for real futures data. Every window records
+the SHA-256 of its selected parameters, computed before the OOS segment is simulated. A mutation test
+(replace all data after an OOS start with a different market) shows earlier selections, finalist scores
+and hashes do not change.
+
+**A-51. Dashboard blind holdout.** The PIPELINE tab splits sessions chronologically into train /
+validation / blind holdout (default 60/20/20) before optimisation. Development tabs then receive only
+sessions before the holdout. Candidates are frozen to read-only files named by the SHA-256 of their
+parameters, execution and sizing. Only a frozen, hash-verified candidate can be run on the holdout; the
+first run is recorded as BLIND, later runs as NOT BLIND. The futures lockbox (A-26) is applied before any
+of this.
+
+**A-52. Monte Carlo is not evidence.** It resamples historical R outcomes (reshuffle, bootstrap, block
+bootstrap, missed trades, extra cost per trade). It describes path risk (drawdowns, streaks, probability
+of loss) given those outcomes; it cannot create or confirm an edge. Seeds make runs reproducible.
+
+**A-53. Execution stress.** Full re-simulations with +0.5/1/2/3 ticks per side, fixed costs x1.5/2/3,
+pessimistic ambiguity and conservative fills, plus a labelled approximation of a delayed entry (entry k
+ticks worse, same exits). FRAGILE = positive at baseline but not positive under any moderate stress
+(+1 tick, 2x costs, pessimistic ambiguity, 1 tick adverse entry).
+
+**A-54. Robustness sweeps.** One parameter at a time around the candidate (others fixed), on the chosen
+development period. plateau = every immediate neighbour positive and their median >= 50 % of the
+candidate's expectancy; spike = neighbour median <= 25 % or not positive. In-sample description only.
+
+**A-55. Report verdicts (fixed in code before any real data).** Evidence = first blind holdout test and
+stitched walk-forward OOS only. INSUFFICIENT EVIDENCE without either or with < 30 OOS trades;
+NO PRELIMINARY EVIDENCE if every OOS expectancy <= 0; PROMISING only with positive OOS expectancy,
+t >= 2 in every OOS source, >= 100 OOS trades, and no fragility flag (spike, FRAGILE stress, >= 2
+walk-forward overfitting flags, disagreement between OOS sources); MIXED otherwise.

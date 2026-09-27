@@ -167,7 +167,9 @@ def test_commission_and_slippage_accounting():
     assert t.exit_price == 104.5  # limit target: no slippage
     assert t.gross_pnl == pytest.approx(3.0 * 50)
     assert t.slippage_cost == pytest.approx(12.5)
-    assert t.commission == pytest.approx(3.0)
+    assert t.commission == pytest.approx(2.0)  # $1/contract/side x 2 fills x 1 contract
+    assert t.fees == pytest.approx(1.0)  # $0.50/contract/side x 2 fills
+    assert t.total_cost == pytest.approx(12.5 + 3.0)
     assert t.net_pnl == pytest.approx(150 - 12.5 - 3.0)
 
 

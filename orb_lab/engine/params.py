@@ -165,6 +165,7 @@ class ExecutionParams:
     slippage_ticks: float | None = None
     commission_per_side: float | None = None
     exchange_fee_per_side: float | None = None
+    friction_per_side: float | None = None
     fill_model: str = "conservative"
     ambiguity: str = "conservative"
     max_fill_delay_minutes: int = 5
@@ -175,7 +176,7 @@ class ExecutionParams:
             raise ParamError(f"fill_model must be one of {FILL_MODELS}")
         if self.ambiguity not in AMBIGUITY_MODES:
             raise ParamError(f"ambiguity must be one of {AMBIGUITY_MODES}")
-        for name in ("slippage_ticks", "commission_per_side", "exchange_fee_per_side"):
+        for name in ("slippage_ticks", "commission_per_side", "exchange_fee_per_side", "friction_per_side"):
             value = getattr(self, name)
             if value is not None and value < 0:
                 raise ParamError(f"{name} must be >= 0")
@@ -196,6 +197,7 @@ class SizingParams:
     risk_pct: float = 0.01
     starting_equity: float = 100_000.0
     max_contracts: float = 1000
+    max_leverage: float | None = None  # notional cap (x equity); None = instrument default, 0 = off
 
     def validate(self) -> None:
         if self.mode not in SIZING_MODES:
@@ -208,6 +210,10 @@ class SizingParams:
             raise ParamError("risk_dollars must be positive")
         if self.mode == "pct_equity" and not (0 < self.risk_pct < 1):
             raise ParamError("risk_pct must be in (0, 1)")
+        if self.max_contracts <= 0:
+            raise ParamError("max_contracts (max units) must be positive")
+        if self.max_leverage is not None and self.max_leverage < 0:
+            raise ParamError("max_leverage must be >= 0")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

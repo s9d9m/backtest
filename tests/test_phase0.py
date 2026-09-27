@@ -95,7 +95,8 @@ def _dataset(tmp_path, dates, paths=None, name="SPY", seed=0):
 def test_etf_spec_and_space_dedup():
     inst = p0.etf_instrument("SPY", CFG, 0.02)
     assert inst.tick_size == 0.01 and inst.tick_value == 0.01 and inst.multiplier == 1
-    assert inst.commission_per_side == 0.02 and inst.slippage_ticks == 0
+    assert inst.friction_per_side == 0.02 and inst.commission_per_side == 0 and inst.slippage_ticks == 0
+    assert inst.asset_class == "etf" and inst.unit == "share"
     configs, info = p0.build_space(CFG, 5)
     assert all(c.entry_tf in (0, 5, 10, 15) for c in configs)
     assert not any(c.entry_method == "limit" and c.stop_method == "or_pct" and c.stop_param == 0.5 for c in configs)
@@ -124,7 +125,7 @@ def test_or_construction_entry_and_costs_on_5m_etf_bars(tmp_path):
     assert t.stop_price == pytest.approx(499.80) and t.target_price == pytest.approx(501.52)
     assert t.exit_reason == "target" and t.exit_time.strftime("%H:%M") == "09:55"
     # $0.02/share on every fill: 100 shares x 2 fills x $0.02 = $4
-    assert t.commission == pytest.approx(4.0) and t.gross_pnl == pytest.approx(86.0) and t.net_pnl == pytest.approx(82.0)
+    assert t.friction == pytest.approx(4.0) and t.total_cost == pytest.approx(4.0) and t.commission == 0 and t.gross_pnl == pytest.approx(86.0) and t.net_pnl == pytest.approx(82.0)
     assert t.r_multiple == pytest.approx((0.86 - 0.04) / 0.86)
     # one ETF tick of confirmation on a stop entry: trigger strictly above 500.61 -> 500.62
     stop_params = StrategyParams(range_minutes=10, entry_method="stop", confirm_ticks=1, stop_method="or_opposite", target_r=1.0, cutoff="11:00")
@@ -194,7 +195,7 @@ def test_trade_log_columns_and_control_reproduces_engine(tmp_path):
     r = p0.split_result(prep, params, inst, 0.02, 100, pd.Timestamp(dates[0]), pd.Timestamp(dates[-1]))
     t = r["_trades"]
     assert len(t) > 3
-    log = t.assign(split="train", symbol="SPY", estimated_friction=t["slippage_cost"] + t["commission"])
+    log = t.assign(split="train", symbol="SPY", estimated_friction=t["total_cost"])
     for col in p0.TRADE_LOG_COLUMNS:
         assert col in log.columns, col
     assert (log["estimated_friction"] == 4.0).all()

@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.5.0: Pre-data platform finalisation (browser-only research workflow)
+- **Walk-forward from the browser**: configure structure (monthly presets 12/3/3/3 primary, 24/3/3, 24/6/6,
+  36/6/6, custom; or trading-session windows for short samples), parameter space, entry families, costs,
+  selection rules, sizing of the stitched curve and date range; launch as a background job
+  (`orb_lab/jobs.py`) with live progress, Stop and Resume (monthly cube checkpoints are reused). Results
+  browser for dashboard and command-line runs; "only stitched blind OOS is evidence" shown throughout;
+  each window records the SHA-256 of its parameters, frozen before the OOS segment is simulated.
+- **ROBUSTNESS tab**: one-at-a-time sweeps around a candidate (OR length, entry TF, target R, stop,
+  cutoff, entry type, confirmation, buffer, direction, OR start), plateau / spike / mixed per parameter,
+  overall verdict, degradation vs the candidate, two-parameter heatmaps.
+- **MONTE CARLO tab**: reshuffle, bootstrap, block bootstrap, missed trades, extra cost per trade; fixed-$
+  or compounding risk; seeded; distributions of ending equity, return, max drawdown, losing streaks,
+  probabilities; historical path vs simulated paths. Sources: candidate, last backtest, walk-forward OOS
+  trades, blind holdout trades.
+- **Risk-based sizing**: starting equity (default $40,000) with 0.25 / 0.5 / 1 / 2 % or custom risk per
+  trade, compounding or fixed $; quantity from entry-to-stop distance, floored to whole contracts/shares;
+  optional notional (buying-power) cap, ETF default 4x; trade log shows quantity, $ at risk, notional.
+- **Cost model and units**: separate commission, exchange/regulatory fees, modelled friction (all $ per
+  contract or share, per side) and slippage (ticks per side); every label shows its unit; trade log and
+  metrics split each category plus total and per-trade cost. ETF friction moved to its own field (Phase-0
+  numbers reproduce exactly). `Instrument.asset_class`/`unit` (future→contract, etf→share). Micro
+  contracts MES, MNQ, MGC, M6E added.
+- **Execution stress test** (BACKTEST and PIPELINE): +0.5…3 ticks, 1.5-3x fixed costs, pessimistic
+  ambiguity, conservative fills, approximate delayed entry; verdict ROBUST / FRAGILE / NOT POSITIVE.
+- **Optimizer UX**: reduced vs comprehensive presets (confirmation required above 5,000 configurations),
+  configurations searched, effective trials, expected best Sharpe under no edge, per-row stability
+  (plateau/spike, neighbour median), optimizer defaults to the train period, "Use as candidate".
+- **Metric explanations**: tooltips and a "What do these numbers mean?" table for every headline metric,
+  with automatic warnings for small samples, annualised figures from < 1 year, |t| < 2, outlier
+  dependence, one-sided profits and ambiguous exits. Equity & risk view (equity, drawdown, cumulative R,
+  trade P&L, position size and $ at risk).
+- **PIPELINE tab**: DATA → SPLIT → BACKTEST/OPTIMIZE → VALIDATE → FREEZE → WALK-FORWARD → ROBUSTNESS +
+  STRESS → MONTE CARLO → BLIND HOLDOUT → REPORT with status; chronological train/validation/blind-holdout
+  split saved per dataset and withheld from development tabs; frozen candidates as read-only files named by
+  SHA-256; one-shot blind test ledger (first test BLIND, later NOT BLIND).
+- **REPORT tab**: candidate report across all stages with conservative verdicts (PROMISING / MIXED /
+  NO PRELIMINARY EVIDENCE / INSUFFICIENT EVIDENCE), Markdown download.
+- **DIAGNOSTICS tab**: null control, planted edge, lookahead truncation, random-direction control, cost-unit
+  check, full test suite; clearly separated from real results.
+- Databento workflow documented in the dashboard as prepared but inactive (no key, no purchase).
+- START_HERE.md rewritten for browser-only use.
+- 168 tests (+41): cost units and per-unit/per-side scaling, contracts vs shares, risk % sizing and compounding,
+  notional cap, Monte Carlo reproducibility and resampling, stress monotonicity and verdicts, sweeps,
+  session-block walk-forward leakage (mutation-checked), split/freeze/blind ledger, background jobs
+  (run, stop, resume, failure), report verdict language, metric cautions, diagnostics, malformed data,
+  and a headless end-to-end dashboard test of the whole pipeline.
+
 ## 0.4.1: Dashboard usable with free data
 - Dashboard:
   - new default data source **Free Yahoo (SPY/QQQ)**. It uses the correct ETF spec (tick $0.01,

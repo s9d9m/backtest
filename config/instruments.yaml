@@ -1,4 +1,5 @@
-# Instrument definitions. Costs are per contract, per side, in USD.
+# Instrument definitions. Every $ cost is PER CONTRACT, PER SIDE (each fill), in USD; a round trip pays it twice.
+# slippage_ticks is ticks per side on market/stop fills (1 tick = tick_size price = tick_value $ per contract).
 # Cost numbers are illustrative retail-level assumptions (see RESEARCH_NOTES.md, A-17);
 # replace them with your broker's actual schedule before drawing conclusions.
 defaults:
@@ -12,6 +13,9 @@ defaults:
   min_qty: 1
   qty_step: 1
   currency: USD
+  asset_class: future           # sized in whole contracts
+  friction_per_side: 0.0        # extra modelled friction $/contract/side (slippage_ticks already models futures friction)
+  max_notional_leverage: 0      # 0 = no notional cap (futures margin varies by broker)
 
 instruments:
   ES:
@@ -45,4 +49,39 @@ instruments:
     multiplier: 125000
     commission_per_side: 0.85
     exchange_fee_per_side: 1.60
+    slippage_ticks: 1.0
+
+  # Micro contracts: same underlying price series as the E-mini/full contract, so ES/NQ/GC/6E data can be
+  # backtested with these specs. Useful for small accounts where one full contract risks too much.
+  MES:
+    name: Micro E-mini S&P 500
+    tick_size: 0.25
+    tick_value: 1.25
+    multiplier: 5
+    commission_per_side: 0.25
+    exchange_fee_per_side: 0.35
+    slippage_ticks: 1.0
+  MNQ:
+    name: Micro E-mini Nasdaq-100
+    tick_size: 0.25
+    tick_value: 0.50
+    multiplier: 2
+    commission_per_side: 0.25
+    exchange_fee_per_side: 0.35
+    slippage_ticks: 1.0
+  MGC:
+    name: Micro Gold
+    tick_size: 0.10
+    tick_value: 1.00
+    multiplier: 10
+    commission_per_side: 0.25
+    exchange_fee_per_side: 0.40
+    slippage_ticks: 1.0
+  M6E:
+    name: Micro Euro FX
+    tick_size: 0.0001
+    tick_value: 1.25
+    multiplier: 12500
+    commission_per_side: 0.25
+    exchange_fee_per_side: 0.30
     slippage_ticks: 1.0

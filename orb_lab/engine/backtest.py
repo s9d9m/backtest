@@ -22,7 +22,7 @@ from .execution import (
 )
 from .metrics import compute_metrics
 from .params import UNLIMITED_TRADES_CAP, ExecutionParams, SizingParams, StrategyParams
-from .portfolio import apply_sizing, daily_equity
+from .portfolio import SIZED_COLUMNS, apply_sizing, daily_equity
 from .session_data import PreparedData
 
 KERNEL_FIELDS = (
@@ -137,7 +137,8 @@ def kernel_to_trades(prep: PreparedData, out: KernelOutput, params: StrategyPara
         return pd.DataFrame(
             columns=[
                 "session_date", "direction", "entry_time", "exit_time", "entry_price", "exit_price",
-                "gross_pnl_pc", "slippage_pc", "commission_pc", "net_pnl_pc", "risk_per_contract", "holding_minutes",
+                "gross_pnl_pc", "slippage_pc", "commission_pc", "fees_pc", "friction_pc", "fixed_cost_pc", "total_cost_pc",
+                "net_pnl_pc", "risk_per_contract", "holding_minutes",
             ]
         )
     day = a["day"]
@@ -178,11 +179,16 @@ def kernel_to_trades(prep: PreparedData, out: KernelOutput, params: StrategyPara
             "holding_minutes": (exit_tod - entry_tod).astype(float),
             "gross_pnl_pc": gross_ticks * tv,
             "slippage_pc": slip_ticks * tv,
-            "commission_pc": np.full(len(day), costs.round_trip_fixed),
+            # every $ cost below is per unit (contract or share) for the round trip = 2 x per-side amount
+            "commission_pc": np.full(len(day), 2.0 * costs.commission_per_side),
+            "fees_pc": np.full(len(day), 2.0 * costs.exchange_fee_per_side),
+            "friction_pc": np.full(len(day), 2.0 * costs.friction_per_side),
+            "fixed_cost_pc": np.full(len(day), costs.round_trip_fixed),
         }
     )
     frame["or_atr"] = frame["or_width"] / frame["atr_daily"]
-    frame["net_pnl_pc"] = frame["gross_pnl_pc"] - frame["slippage_pc"] - frame["commission_pc"]
+    frame["total_cost_pc"] = frame["slippage_pc"] + frame["fixed_cost_pc"]
+    frame["net_pnl_pc"] = frame["gross_pnl_pc"] - frame["total_cost_pc"]
     frame["risk_per_contract"] = frame["risk_ticks"] * tv
     frame["r_multiple"] = frame["net_pnl_pc"] / frame["risk_per_contract"]
     frame["weekday"] = frame["session_date"].dt.day_name()
@@ -207,9 +213,10 @@ def run_backtest(
     if len(trades):
         trades = apply_sizing(trades, sizing, prep.instrument, costs)
     else:
-        for col in ("qty", "gross_pnl", "slippage_cost", "commission", "net_pnl", "risk_dollars", "equity_before", "equity_after"):
+        for col in SIZED_COLUMNS:
             trades[col] = pd.Series(dtype=float)
         trades["sized_out"] = pd.Series(dtype=bool)
+        trades["size_capped"] = pd.Series(dtype=bool)
         trades["r_multiple"] = pd.Series(dtype=float)
     dates = prep.dates[d_lo:d_hi]
     daily = daily_equity(trades, dates, sizing.starting_equity)
@@ -232,7 +239,11 @@ def run_backtest(
         "intrabar_entries": int(trades["intrabar_entry"].sum()) if n else 0,
         "data_end_exits": int((trades["exit_reason"] == "data_end").sum()) if n else 0,
         "sized_out_trades": int(trades["sized_out"].sum()) if n else 0,
-        "costs": {"slippage_ticks": costs.slippage_ticks, "round_trip_fixed": costs.round_trip_fixed},
+        "size_capped_trades": int(trades["size_capped"].sum()) if n else 0,
+        "unit": prep.instrument.unit,
+        "costs": {"slippage_ticks_per_side": costs.slippage_ticks, "commission_per_unit_per_side": costs.commission_per_side,
+                  "fees_per_unit_per_side": costs.exchange_fee_per_side, "friction_per_unit_per_side": costs.friction_per_side,
+                  "fixed_round_trip_per_unit": costs.round_trip_fixed, "round_trip_fixed": costs.round_trip_fixed},
     }
     return BacktestResult(
         params=params,
