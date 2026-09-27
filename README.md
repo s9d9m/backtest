@@ -20,6 +20,7 @@ out-of-sample walk-forward curve (Milestone 3).
 | 4 | Robustness: neighbourhood sweeps (plateau vs spike), pair heatmaps, execution stress test | **done** (v0.5.0) |
 | 5 | Monte Carlo (reshuffle, bootstrap, block bootstrap, missed trades, cost stress) | **done** (v0.5.0); Deflated Sharpe, PBO/CSCV planned |
 | — | Browser workflow: WFO launcher with background jobs, blind-holdout pipeline, freeze, final report, diagnostics, risk-based sizing, unit-labelled costs | **done** (v0.5.0) |
+| — | UI/UX redesign: research-first navigation (Overview → … → Data → Settings), current-strategy header, visual robustness / Monte Carlo / validation pages, trade explorer | **done** (v0.6.0) |
 | 6 | Retest, FVG, candle-confirmation entries; trailing stops; regime/percentile filters | planned |
 
 ## Phase 0: free proxy experiment (NOT futures validation)
@@ -120,8 +121,9 @@ orb_lab/
     dq_report.py               real-data DQ: month-by-month 09:30 ET alignment, DST, early closes
     metric_help.py             plain-language metric explanations and sample-size cautions
     final_report.py            candidate report across all stages, conservative verdict rules
-  ui/                          dashboard: app_main (data, backtest, optimization, trade log), pipeline_tab (pipeline,
-                               report), wfo_tab, robustness_tab, montecarlo_tab, diagnostics_tab, phase0_tab, common
+  ui/                          dashboard: app_main (shell + navigation), state (current strategy, data, research stages),
+                               theme (formatting, cards, CSS), charts, widgets, logic (pure helpers), phase0_tab,
+                               pages/ overview, strategy, backtest, optimize, validate, stress, results, trades, data, settings
   jobs.py                      background jobs (walk-forward from the browser): progress, stop, resume
   cli.py
 tests/                         unit, exact-outcome, DST, look-ahead, statistical, grid, UI

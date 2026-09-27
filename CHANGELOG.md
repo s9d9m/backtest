@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.0: UI/UX redesign (presentation only; no research calculations changed)
+- **New information architecture**, research first, data and administration last: Overview · Strategy · Backtest ·
+  Optimize · Validate · Stress test · Results · Trade explorer · Data · Settings & research. Sidebar menu; only the
+  selected page is computed.
+- **Overview** home screen: current strategy, market, account and risk, execution, headline historical result
+  (balance, return, P&L, trades, win rate, expectancy, profit factor, drawdown), research-stage badges (in-sample,
+  validation, blind OOS, walk-forward, robustness, execution, Monte Carlo) and the research verdict. A backtest alone is
+  never shown as validated.
+- **Current strategy** is one object (parameters + execution + sizing) used by every page, shown in a header on each
+  research page with an *Edit strategy* button. Results computed for a strategy are keyed to it and the data, so editing
+  anything marks them "not run" instead of showing stale numbers.
+- **Strategy** page with grouped controls (opening range, entry, stop & target, trade management & direction, position
+  sizing, execution) and an Advanced section; saved/frozen strategies can be loaded.
+- **Backtest**: headline cards first, then equity, drawdown, cumulative R and trade-P&L charts, then details; raw tables
+  under Advanced; one consolidated caution box.
+- **Optimize**: *Best historical configuration* vs *Robust candidate* cards, compact ranked table (expectancy, PF,
+  trades, Sharpe, 1-unit drawdown, t-stat, top-5 share, stability), one-click *Use this strategy / Backtest / Validate /
+  Stress test*; multiple-testing warning kept; heatmaps and the full table behind expanders.
+- **Validate**: TRAIN → VALIDATION → FREEZE → BLIND OOS → ROLL FORWARD diagram; blind-holdout steps; walk-forward
+  launcher and results led by stitched blind-OOS cards, cumulative OOS R, fold-by-fold bars and a degradation chart
+  with in-sample phases greyed out.
+- **Stress test**: parameter robustness (BROAD PLATEAU / MODERATE / SPIKE-FRAGILE per parameter, charts with your
+  setting highlighted, heatmap with the candidate marked), execution sensitivity (scenario chart and verdict) and a
+  redesigned Monte Carlo (headline balance/drawdown/loss-probability cards, four distribution charts, path fan;
+  percentile tables under Advanced).
+- **Results** page: verdict banner and stage cards; downloadable Markdown report.
+- **Trade explorer**: filters, per-trade detail cards and a candlestick chart with range, entry, stop, target and exit.
+- **Data** page: loading, data quality, sessions, provenance, and a prepared-but-inactive Databento panel (ES, NQ, GC,
+  6E · GLBX.MDP3 · OHLCV-1m).
+- **Settings & research**: market specifications, frozen strategies and hashes, holdout ledger, research registry,
+  diagnostics, Phase-0 archive, test runner.
+- Consistent visual system: number formats ($43,532 · 8.8% · +0.13R · 1.64), cards, status colours with icons,
+  help tooltips for every key statistic, one chart style.
+- Usability fixes found while testing: the header refreshes immediately after saving a strategy; skipped signals
+  (stop too wide for the risk budget) are explained with a micro-contract hint; stitched walk-forward results are shown
+  in R rather than at 1 share.
+- On first open a locally cached free SPY copy is loaded automatically; otherwise the Overview offers one-click loading.
+- 177 tests (+9 net): 5 page-based dashboard tests (navigation order, empty state, free-data autoload with ETF units,
+  strategy editor, full workflow including a walk-forward job) and 7 helper tests (formatting, robust-candidate choice,
+  fold consistency, degradation, Monte Carlo headline, trade filters, strategy descriptions).
+
 ## 0.5.0: Pre-data platform finalisation (browser-only research workflow)
 - **Walk-forward from the browser**: configure structure (monthly presets 12/3/3/3 primary, 24/3/3, 24/6/6,
   36/6/6, custom; or trading-session windows for short samples), parameter space, entry families, costs,

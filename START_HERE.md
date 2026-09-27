@@ -46,61 +46,32 @@ never charges you.
 
 ## Using the dashboard
 
-The tabs are along the top; the data controls are on the left. Everything works in the browser; you do not
-need the terminal.
+The menu on the left is ordered the way research normally flows. You rarely need the last two entries.
 
-### 1. Load data (left sidebar)
-- Leave **Data source = Free Yahoo (SPY/QQQ)**, pick **SPY** or **QQQ**, click **Load data**. It uses the
-  saved copy if there is one, otherwise downloads the last ~60 days (about 30 seconds). Tick "Download fresh
-  data" only if you want the newest days.
-- **Synthetic** data is for testing the software only (a yellow banner says so).
+| Page | What it is for |
+|---|---|
+| **Overview** | The home screen: the strategy being tested, the market, your account and risk, the key results, and how far validation has got (in-sample, validation, blind holdout, walk-forward, robustness, execution, Monte Carlo) with a research verdict. |
+| **Strategy** | Build or edit the strategy: opening range, entry, stop, target, trade management, direction, **position sizing** (e.g. $40,000 and 1% or 2% risk per trade) and **execution costs** (every $ amount is per share or per contract, per side). Rare settings sit under *Advanced settings*. Click **Save strategy**; every page then uses it. |
+| **Backtest** | Did it make or lose money? Balance, return, P&L, trades, win rate, expectancy, profit factor and drawdown first, then equity, drawdown, cumulative R and trade-by-trade charts, then details. |
+| **Optimize** | Try many settings at once. It separates the **best historical configuration** (usually luck) from a **robust candidate** (neighbouring settings also work) and shows how much of the result luck alone could explain. Buttons: *Use this strategy*, *Backtest*, *Validate*, *Stress test*. |
+| **Validate** | The only place evidence comes from. **Blind holdout test**: hide the last part of the data, check the validation period, freeze the strategy, test it once. **Walk-forward**: choose → freeze → test on the next unseen period → roll forward, in the background; the stitched blind out-of-sample result is what counts. |
+| **Stress test** | Parameter robustness (plateau or spike), execution sensitivity (more slippage, higher costs, worse fills) and Monte Carlo (how bad the path could have been). |
+| **Results** | One page with every stage and the verdict: PROMISING, MIXED, NO PRELIMINARY EVIDENCE or INSUFFICIENT EVIDENCE. Download it as a report. |
+| **Trade explorer** | Every trade, with filters (dates, long/short, winners/losers, entry type, R) and a chart of the chosen trade. CSV download. |
+| **Data** | Load or change data: free Yahoo SPY/QQQ, your own CSV/Parquet file, or synthetic test data. Data-quality checks, sessions, provenance, and the (inactive) plan for real futures data. |
+| **Settings & research** | Market cost tables, frozen strategies and fingerprints, the holdout ledger, the research registry, software self-checks and the Phase-0 archive. |
 
-### 2. PIPELINE tab: the guided workflow
-It shows each stage with ✅ / ⬜ / ⚠️:
-**DATA → SPLIT → BACKTEST / OPTIMIZE → VALIDATE → FREEZE → WALK-FORWARD → ROBUSTNESS + STRESS → MONTE CARLO → BLIND HOLDOUT → REPORT**
-1. **Save split and withhold the holdout** (do this first). The last 20 % of days becomes a *blind
-   holdout* that no other tab can see.
-2. Explore in **BACKTEST**, search in **OPTIMIZATION** (it defaults to the *train* days only).
-3. Back in PIPELINE: **Evaluate on train and validation**, pick one, **Use as candidate**.
-4. **FREEZE** it (creates a locked file with a fingerprint).
-5. **RUN BLIND HOLDOUT TEST** once. Only the first test counts as blind.
-
-### 3. The other tabs
-- **BACKTEST**: one parameter set.
-  - Costs are labelled with units: every $ amount is **per share (or per contract) per side**, e.g.
-    $0.02/share friction = $0.04 per share per round trip.
-  - Sizing: fixed quantity, or **risk % per trade** (0.25 / 0.5 / 1 / 2 % or custom) of a starting equity
-    such as $40,000. The trade log shows shares/contracts and $ at risk for every trade.
-  - Under the numbers: **"What do these numbers mean?"** explains every metric and warns when the sample
-    is too small. Open **"Equity & risk view"** for equity, drawdown, cumulative R, trade-by-trade P&L and
-    position size. **Run execution stress test** re-runs the setup with worse fills and higher costs and
-    says ROBUST, FRAGILE or NOT POSITIVE.
-- **OPTIMIZATION**: tries many settings. Choose a *reduced* preset; a *comprehensive* search needs an
-  extra tick-box. The table shows how many configurations were searched, how many "effective" independent
-  tries that is, what the best result would look like **by luck alone**, and whether each row is a
-  *plateau* (neighbours also work) or a *spike* (probably luck). **Use as candidate** sends a row to the
-  other tabs.
-- **WALK-FORWARD**: open "Configure and launch", choose the window unit (use **trading sessions** for the
-  free ~60-day data; the **months** presets 12/3/3/3, 24/3/3, 24/6/6, 36/6/6 are for the real futures
-  data later), a parameter space and costs, then **LAUNCH**. It runs in the background with a progress
-  bar; you can **Stop** and **Resume**. Only the blue **blind OOS** parts are evidence; training and
-  validation numbers are not.
-- **ROBUSTNESS**: pick the candidate, **RUN NEIGHBOURHOOD SWEEP**. Each chart changes one setting
-  (orange bar = your candidate). Verdict PLATEAU is good, SPIKE means fragile. You can also draw a
-  two-setting heatmap.
-- **MONTE CARLO**: choose which trades to simulate (candidate, last backtest, walk-forward OOS or blind
-  holdout), number of simulations and method, then **RUN**. Orange = what happened, grey = simulated.
-- **TRADE LOG**: every trade of the last backtest with size, risk and each cost (CSV download).
-- **DIAGNOSTICS**: software self-checks (random-walk data must show no edge, planted edge must be found,
-  deleting future data must not change past trades, cost units, full test suite). Not market results.
-- **REPORT**: one page per candidate across all stages, with a verdict: PROMISING, MIXED, NO PRELIMINARY
-  EVIDENCE or INSUFFICIENT EVIDENCE. Download it as Markdown.
-- **PHASE-0 RESULTS**: the finished free SPY/QQQ experiment (read-only).
+### A first session (about 10 minutes)
+1. **Overview**: if there is no data yet, click **Load free SPY data** (about 30 seconds, no account).
+2. **Validate → Blind holdout test → Save split and withhold the holdout.** Do this before optimising.
+3. **Optimize → RUN OPTIMIZATION**, then *Use this strategy* on the robust candidate.
+4. **Stress test**: run the three tabs.
+5. **Validate**: *Run validation check* → *FREEZE* → tick the box → *RUN BLIND HOLDOUT TEST* (once).
+6. **Results**: read the verdict. With ~60 days of free data it will almost always say the evidence is insufficient —
+   that is the honest answer, not a fault.
 
 ### Good to know
-- Nothing here can spend money. The paid futures data source (Databento) is prepared but switched off;
-  see "Real futures data" at the bottom of PIPELINE.
-- Yahoo only provides about **60 days** of 5-minute bars. Every result on this data is far too small a
-  sample to prove or disprove an edge, and the report will say so.
-- If a button seems to do nothing, look at the top right of the page. "Running…" means it is still
-  working. Walk-forward runs keep going in the background even if you close the tab.
+- Hover the small **?** icons for plain-English explanations of every statistic.
+- Nothing here can spend money. The paid futures data source (Databento) is prepared but switched off (see **Data**).
+- Everything about SPY/QQQ is a **FREE PROXY — NOT FUTURES VALIDATION**.
+- Walk-forward runs keep going in the background even if you close the browser tab.

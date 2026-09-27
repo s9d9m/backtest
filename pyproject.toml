@@ -1,6 +1,6 @@
 [project]
 name = "orb-lab"
-version = "0.5.0"
+version = "0.6.0"
 description = "Research platform for walk-forward testing Opening Range Breakout strategies on futures"
 requires-python = ">=3.12"
 readme = "README.md"
